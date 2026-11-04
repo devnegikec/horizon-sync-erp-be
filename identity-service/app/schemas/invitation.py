@@ -62,6 +62,14 @@ class InvitationResponse(BaseModel):
     extra_data: dict | None = None
     created_at: datetime
 
+    already_invited: bool = Field(
+        default=False,
+        description=(
+            "True when an unexpired invitation already existed, so nothing new "
+            "was created or emailed. Use the resend endpoint to send it again."
+        ),
+    )
+
     model_config = ConfigDict(from_attributes=True)
 
 

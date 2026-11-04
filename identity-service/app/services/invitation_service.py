@@ -17,6 +17,7 @@ from app.core.exceptions import (
     UserAlreadyExistsException,
 )
 from app.models.base import UserStatus
+from app.models.invitation import Invitation
 from app.repositories.invitation_repository import InvitationRepository
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
@@ -68,7 +69,11 @@ class InvitationService:
             inviter_permissions: List of permission codes the inviter has
 
         Returns:
-            Invitation response dictionary with token
+            Invitation response dictionary with token. When an unexpired
+            invitation already exists for this email/organization the existing
+            one is returned with ``token=None`` and ``already_invited=True`` —
+            callers must not send an email in that case. Re-sending is an
+            explicit action (``resend_invitation``), which rotates the token.
 
         Raises:
             PermissionDeniedException: If user doesn't have invite permission
@@ -79,14 +84,14 @@ class InvitationService:
         # Check if user has invite permission
         self._validate_inviter_permissions(inviter_id, inviter_permissions)
 
-        email = invitation_data.get("email")
+        email = (invitation_data.get("email") or "").strip().lower()
         organization_id = invitation_data.get("organization_id")
+        # Persist the normalised address so the duplicate check, the placeholder
+        # user and the invitation row all agree on one spelling.
+        invitation_data["email"] = email
 
         # Check if user already exists and is in the organization
         self._check_existing_membership(email, organization_id)
-
-        # Check for existing pending invitation
-        self._handle_existing_invitation(email, organization_id)
 
         # Create or reuse a pending user record so the user appears in the
         # user management list and can be edited (e.g. fix a wrong email
@@ -116,6 +121,27 @@ class InvitationService:
         # Ensure org membership for the pending user
         self._ensure_pending_user_role(user_id, organization_id, role_id)
 
+        # An invitation that is still within its expiry window is reused rather
+        # than replaced: the recipient already has a working link, so creating a
+        # second one would only send a duplicate email and invalidate the link
+        # they were just given. The caller must not send an email when no new
+        # token is returned.
+        active_invitation = self._resolve_existing_invitations(email, organization_id)
+        if active_invitation:
+            logger.info(
+                "Active invitation %s already exists for %s in org %s "
+                "(expires %s); reusing it instead of sending another email",
+                active_invitation.id,
+                email,
+                organization_id,
+                active_invitation.expires_at,
+            )
+            self._refresh_pending_invitation(active_invitation, invitation_data)
+            result = self._invitation_to_dict(active_invitation)
+            result["token"] = None  # Nothing new to email
+            result["already_invited"] = True
+            return result
+
         # Generate token
         token, token_hash = _generate_invitation_token()
 
@@ -142,33 +168,91 @@ class InvitationService:
     def _check_existing_membership(self, email: str, organization_id: UUID) -> None:
         """Check if user with email is already a member of the organization."""
         existing_user = self.user_repo.get_user_by_email(email)
-        if existing_user:
-            from app.models.role import UserOrganizationRole
+        if not existing_user:
+            return
+        # A placeholder row created by an earlier invitation is not a member
+        # yet — the active-invitation check decides what happens next. Without
+        # this guard a second invite would fail with "already a member" even
+        # though the person never accepted.
+        if existing_user.status == UserStatus.PENDING:
+            return
 
-            existing_membership = (
-                self.db.query(UserOrganizationRole)
-                .filter(
-                    UserOrganizationRole.user_id == existing_user.id,
-                    UserOrganizationRole.organization_id == organization_id,
-                    UserOrganizationRole.is_active == True,  # noqa: E712
-                )
-                .first()
+        from app.models.role import UserOrganizationRole
+
+        existing_membership = (
+            self.db.query(UserOrganizationRole)
+            .filter(
+                UserOrganizationRole.user_id == existing_user.id,
+                UserOrganizationRole.organization_id == organization_id,
+                UserOrganizationRole.is_active == True,  # noqa: E712
             )
-            if existing_membership:
-                raise UserAlreadyExistsException(
-                    f"User with email '{email}' is already a member of this organization"
-                )
-
-    def _handle_existing_invitation(self, email: str, organization_id: UUID) -> None:
-        """Cancel existing pending invitation for the same email and organization."""
-        existing_invitation = self.invitation_repo.get_invitation_by_email_and_org(
-            email, organization_id
+            .first()
         )
-        if existing_invitation:
-            # Cancel the old invitation and create a new one
-            self.invitation_repo.update_invitation(
-                existing_invitation, {"status": "cancelled"}
+        if existing_membership:
+            raise UserAlreadyExistsException(
+                f"User with email '{email}' is already a member of this organization"
             )
+
+    def _resolve_existing_invitations(
+        self, email: str, organization_id: UUID
+    ) -> Invitation | None:
+        """Close out stale pending invitations and return the live one, if any.
+
+        Best-practice invitation handling:
+        * at most one *active* (unexpired, pending) invitation per email/org;
+        * re-inviting while one is active is a no-op (same link, no new email);
+        * expired rows and older duplicates are marked, keeping the newest row
+          as the single source of truth.
+
+        Returns:
+            The unexpired pending invitation to reuse, or ``None`` when a fresh
+            one should be created.
+        """
+        now = datetime.now(UTC)
+        pending = self.invitation_repo.get_pending_invitations(email, organization_id)
+
+        active: Invitation | None = None
+        for invitation in pending:
+            if active is None and invitation.expires_at > now:
+                active = invitation
+                continue
+            new_status = "expired" if invitation.expires_at <= now else "cancelled"
+            logger.info(
+                "Closing superseded invitation %s as '%s'", invitation.id, new_status
+            )
+            self.invitation_repo.update_invitation(invitation, {"status": new_status})
+        return active
+
+    def _refresh_pending_invitation(
+        self, invitation: Invitation, invitation_data: dict
+    ) -> None:
+        """Sync a reused invitation with the latest invite request.
+
+        The token and expiry are left untouched (the recipient already holds
+        that link), but a role/team/message change must not be silently
+        dropped: whoever accepts will get exactly what was last requested.
+        """
+        updates: dict = {}
+        for field in ("role_id", "message", "first_name", "last_name"):
+            value = invitation_data.get(field)
+            if value is not None:
+                updates[field] = value
+
+        team_ids = invitation_data.get("team_ids")
+        if team_ids:
+            updates["team_ids"] = [str(team_id) for team_id in team_ids]
+
+        custom_permission_ids = invitation_data.get("custom_permission_ids")
+        if custom_permission_ids:
+            extra_data = dict(invitation.extra_data or {})
+            extra_data["custom_permission_ids"] = [
+                str(pid) for pid in custom_permission_ids
+            ]
+            updates["extra_data"] = extra_data
+
+        if updates:
+            self.invitation_repo.update_invitation(invitation, updates)
+            logger.info(f"Active invitation {invitation.id} refreshed in place")
 
     def _ensure_pending_user_role(
         self, user_id: UUID, organization_id: UUID, role_id: UUID | None
@@ -199,6 +283,18 @@ class InvitationService:
             self.db.flush()
             logger.info(
                 f"Org membership created for pending user {user_id} in org {organization_id}"
+            )
+            return
+
+        # Re-inviting with a different role must not leave the stale role in
+        # place: acceptance reads the membership, so keep it in sync while the
+        # invitation is still pending.
+        if role_id and existing.role_id != role_id:
+            existing.role_id = role_id
+            self.db.flush()
+            logger.info(
+                f"Pending membership role updated for user {user_id} in org "
+                f"{organization_id}"
             )
 
     def _prepare_invitation_data(

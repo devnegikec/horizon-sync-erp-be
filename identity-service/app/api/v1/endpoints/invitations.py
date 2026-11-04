@@ -111,6 +111,18 @@ async def send_invitation(
         )
         logger.info(f"Invitation created: {result['id']}")
 
+        if result.get("already_invited"):
+            # Idempotent re-invite: an unexpired invitation already exists, so the
+            # recipient keeps the link they were already sent. Deliberately no
+            # email — a second mail with a new/duplicate link just confuses the
+            # invitee and invalidates the first. Re-sending is an explicit action
+            # (POST /invitations/{id}/resend).
+            logger.info(
+                f"Active invitation already exists for {result['email']}; "
+                "no invitation email sent"
+            )
+            return InvitationResponse(**result)
+
         # Send invitation email in background
         email_service = EmailService()
         org = (
