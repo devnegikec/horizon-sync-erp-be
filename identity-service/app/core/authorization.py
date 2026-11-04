@@ -155,18 +155,10 @@ def require_organization_permission(
     if cross_org_allows(current_user.permissions, (required_permission,)):
         return
 
-    if _platform_grants(current_user.permissions):
-        # Cross-org platform admin whose grant does not cover this action.
-        logger.warning(
-            "Permission denied: platform user %s lacks a grant for '%s'",
-            current_user.id,
-            required_permission,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission denied. Required: {required_permission}",
-        )
-
+    # A platform grant that does not map to this action is not a denial on its
+    # own: the caller may well hold the permission through a role in *this*
+    # organization, so fall through to the organization-scoped checks instead
+    # of returning 403 before they run.
     if not current_user.organization_ids:
         # Authorization context was not populated (e.g. an older caller built
         # CurrentUser by hand) — fall back to the previous aggregate behaviour
@@ -205,14 +197,8 @@ def require_any_organization_permission(
     if cross_org_allows(current_user.permissions, required_permissions):
         return
 
-    if _platform_grants(current_user.permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=(
-                "Permission denied. Required one of: " + ", ".join(required_permissions)
-            ),
-        )
-
+    # Unmapped platform grants are not a denial by themselves — see
+    # ``require_organization_permission``. The organization grant decides below.
     if not current_user.organization_ids:
         if not any(
             has_org_permission(current_user.permissions, code)
@@ -298,12 +284,8 @@ def require_shared_organization_permission(
     if cross_org_allows(current_user.permissions, (required_permission,)):
         return
 
-    if _platform_grants(current_user.permissions):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Permission denied. Required: {required_permission}",
-        )
-
+    # Unmapped platform grants are not a denial by themselves — the caller may
+    # hold the permission in an organization shared with the target.
     shared = shared_organization_ids(db, current_user.id, other_user_id)
     if not shared:
         raise HTTPException(

@@ -25,9 +25,13 @@ INDEX_NAME = "uq_qr_products_org_name_ci"
 
 # ``btrim(name)`` only strips spaces, so a trailing tab/newline would slip past a
 # whitespace-normalised uniqueness guarantee. Trim every whitespace character.
+# NOTE: PostgreSQL's escape strings have NO ``\v`` sequence (Table 4.1 lists only
+# \b \f \n \r \t \o \x \u \U; anything else after a backslash is literal), so
+# ``E'...\v'`` would silently trim the letter ``v`` — making "Acme" and "Acmev"
+# collide. Vertical tab (0x0B) must come from ``chr(11)``.
 # Keep ``_DUPLICATES_SQL`` on exactly the same expression as the index, or the
 # pre-check would miss a duplicate and the CREATE INDEX would fail raw.
-_TRIM_WHITESPACE = "btrim(name, E' \\t\\n\\r\\f\\v')"
+_TRIM_WHITESPACE = "btrim(name, E' \\t\\n\\r\\f' || chr(11))"
 _NAME_EXPRESSION = f"lower({_TRIM_WHITESPACE})"
 
 _DUPLICATES_SQL = sa.text(

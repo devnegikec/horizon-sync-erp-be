@@ -83,7 +83,7 @@ def test_duplicate_invitation_reuses_active_invite(
         "role_id": None,
         "team_ids": [],
         "message": None,
-        "extra_data": {},
+        "extra_data": {"warehouse_ids": ["wh-1"]},
     }
     # First invitation
     result1 = service.create_invitation(
@@ -93,9 +93,12 @@ def test_duplicate_invitation_reuses_active_invite(
     )
     assert result1["token"], "first invitation must carry a token to email"
 
-    # Second invitation (active one exists -> reused, nothing to send)
+    # Second invitation (active one exists -> reused, nothing to send, but the
+    # request's own extra_data - e.g. warehouse_ids - must be applied)
+    repeat_data = invitation_data.copy()
+    repeat_data["extra_data"] = {"warehouse_ids": ["wh-2"]}
     result2 = service.create_invitation(
-        invitation_data.copy(),
+        repeat_data,
         inviter_id=test_user.id,
         inviter_permissions=inviter_permissions,
     )
@@ -105,6 +108,7 @@ def test_duplicate_invitation_reuses_active_invite(
     assert result2["token"] is None
     assert result2["already_invited"] is True
     assert result2["status"] == "pending"
+    assert result2["extra_data"]["warehouse_ids"] == ["wh-2"]
 
     pending = repo.get_pending_invitations(email, test_organization.id)
     assert len(pending) == 1

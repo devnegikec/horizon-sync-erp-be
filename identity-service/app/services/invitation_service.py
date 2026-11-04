@@ -8,7 +8,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.core.authorization import has_permission, is_system_admin
+from app.core.authorization import has_org_permission, is_system_admin
 from app.core.exceptions import (
     InvitationAlreadyAcceptedException,
     InvitationExpiredException,
@@ -226,33 +226,33 @@ class InvitationService:
     def _refresh_pending_invitation(
         self, invitation: Invitation, invitation_data: dict
     ) -> None:
-        """Sync a reused invitation with the latest invite request.
+        """Re-apply the invite request onto a reused (still live) invitation.
 
-        The token and expiry are left untouched (the recipient already holds
-        that link), but a role/team/message change must not be silently
-        dropped: whoever accepts will get exactly what was last requested.
+        The token and expiry stay untouched (the recipient already holds that
+        link), but every field a fresh invitation would carry is replaced with
+        what was just requested — role, teams, name, message and ``extra_data``
+        (e.g. ``warehouse_ids``). Merging would keep stale values, so the
+        request wins outright: an omitted ``role_id`` clears the role and an
+        empty ``custom_permission_ids`` revokes previously granted ones instead
+        of leaving them for acceptance to grant.
         """
-        updates: dict = {}
-        for field in ("role_id", "message", "first_name", "last_name"):
-            value = invitation_data.get(field)
-            if value is not None:
-                updates[field] = value
-
-        team_ids = invitation_data.get("team_ids")
-        if team_ids:
-            updates["team_ids"] = [str(team_id) for team_id in team_ids]
-
-        custom_permission_ids = invitation_data.get("custom_permission_ids")
+        extra_data = dict(invitation_data.get("extra_data") or {})
+        custom_permission_ids = invitation_data.get("custom_permission_ids") or []
         if custom_permission_ids:
-            extra_data = dict(invitation.extra_data or {})
             extra_data["custom_permission_ids"] = [
                 str(pid) for pid in custom_permission_ids
             ]
-            updates["extra_data"] = extra_data
 
-        if updates:
-            self.invitation_repo.update_invitation(invitation, updates)
-            logger.info(f"Active invitation {invitation.id} refreshed in place")
+        invitation.role_id = invitation_data.get("role_id")
+        invitation.message = invitation_data.get("message")
+        invitation.first_name = invitation_data.get("first_name")
+        invitation.last_name = invitation_data.get("last_name")
+        invitation.team_ids = [
+            str(team_id) for team_id in invitation_data.get("team_ids") or []
+        ]
+        invitation.extra_data = extra_data
+        self.db.commit()
+        logger.info(f"Active invitation {invitation.id} refreshed in place")
 
     def _ensure_pending_user_role(
         self, user_id: UUID, organization_id: UUID, role_id: UUID | None
@@ -287,9 +287,10 @@ class InvitationService:
             return
 
         # Re-inviting with a different role must not leave the stale role in
-        # place: acceptance reads the membership, so keep it in sync while the
-        # invitation is still pending.
-        if role_id and existing.role_id != role_id:
+        # place: acceptance reads the membership, so mirror the request exactly
+        # (including an omitted role, which a fresh invitation would store as
+        # NULL) while the invitation is still pending.
+        if existing.role_id != role_id:
             existing.role_id = role_id
             self.db.flush()
             logger.info(
@@ -811,8 +812,13 @@ class InvitationService:
         if "user.*" in permissions:
             return True
 
+        # ``has_org_permission`` also honours the seeded platform codes
+        # (``system_admin.users_invite`` / ``system_admin.users_manage`` →
+        # ``user.invite``), which ``require_any_organization_permission`` in the
+        # endpoint already accepts. Using ``has_permission`` here made the two
+        # guards disagree and rejected a caller the endpoint had admitted.
         return any(
-            has_permission(permissions, perm)
+            has_org_permission(permissions, perm)
             for perm in [
                 "user.invite",
                 "invitation.create",
