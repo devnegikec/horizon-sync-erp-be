@@ -573,6 +573,11 @@ class PutAwayService:
         for item_id in item_order:
             lines = by_item[item_id]
             item = lines[0]["item"]
+            # Only a serialized item can carry a unit serial in ``batch_number``.
+            # For a batch-tracked item that value is a real batch code and must
+            # be queued by quantity, never as one serial. Defaults to True so
+            # items loaded without the flag keep the legacy behaviour.
+            is_serialized = getattr(item, "has_serial_no", True)
             pack_size = self._items_per_master_pack(item_id, org_id)
             if pack_size:
                 # Group lines by packaging unit so each master-pack chunk keeps
@@ -585,18 +590,39 @@ class PutAwayService:
                     # T1.1 — prefer serials persisted on the slip line; fall back
                     # to batch_number for slips created before the column.
                     serials: list[str] = []
+                    batch_fallback = False
                     for ln in pu_lines:
                         si = ln["slip_item"]
                         persisted = list(si.serial_nos or [])
                         if persisted:
                             serials.extend(persisted)
-                        elif si.batch_number:
-                            # Legacy line without persisted serials:
-                            # ``batch_number`` is the unit serial. Append it ONCE
-                            # — never once per quantity, because repeating a
-                            # serial would queue the same physical QR for
-                            # put-away multiple times.
+                        elif si.batch_number and is_serialized:
+                            # Legacy serialized slip: ``batch_number`` held the
+                            # unit serial. Append it ONCE — never once per
+                            # quantity, because repeating a serial would queue
+                            # the same physical QR for put-away multiple times.
                             serials.append(si.batch_number)
+                        elif si.batch_number:
+                            # Batch-tracked item (no serials): the value is a
+                            # real batch code, not a unit serial — using it as
+                            # one would collapse the receipt to a single unit.
+                            batch_fallback = True
+                    if batch_fallback and not serials:
+                        # Nothing serialized in this packaging unit: queue the
+                        # lines by quantity instead of by serial.
+                        for ln in pu_lines:
+                            si = ln["slip_item"]
+                            source_lines.append(
+                                {
+                                    "item": item,
+                                    "sku": si.sku,
+                                    "quantity": Decimal(str(si.quantity)),
+                                    "batch_number": si.batch_number,
+                                    "serial_nos": None,
+                                    "packaging_unit_id": pu_id,
+                                }
+                            )
+                        continue
                     # A serial/QR identifies exactly one physical unit and is
                     # unique at the product level. Overlapping slip lines (for
                     # example a regenerated receipt) can list the same serial

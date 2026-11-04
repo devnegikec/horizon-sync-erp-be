@@ -75,6 +75,7 @@ import csv
 import io
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -95,6 +96,20 @@ except ImportError:  # pragma: no cover
 # Deterministic IDs
 # --------------------------------------------------------------------------- #
 NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")  # stable, project-local
+
+# Source schema names are interpolated into SQL, so they must be plain
+# identifiers (no dots, quotes, semicolons or whitespace).
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _identifier_arg(value: str) -> str:
+    """argparse type for a SQL identifier used in qualified table names."""
+    if not _IDENTIFIER_PATTERN.match(value or ""):
+        raise argparse.ArgumentTypeError(
+            f"{value!r} is not a valid SQL identifier (letters, digits and "
+            "underscores only, not starting with a digit)"
+        )
+    return value
 
 
 def did(kind: str, src_id: Any) -> str:
@@ -176,6 +191,9 @@ class SSHSource:
             pg_db,
             schema,
         )
+        if not _IDENTIFIER_PATTERN.match(self.schema or ""):
+            # Defensive: the schema is interpolated into source SQL.
+            sys.exit(f"Invalid source schema name: {self.schema!r}")
         if not os.path.exists(os.path.expanduser(self.key)):
             sys.exit(f"SSH key not found: {self.key}")
         if not shutil.which("ssh"):
@@ -367,6 +385,40 @@ class Migrator:
         """Fully-qualified source table name."""
         return f"{self.schema}.{name}"
 
+    def _reuse_setting_ids(self, cur, out: list[tuple]) -> None:
+        """Adopt the id of an existing setting with the same (type, value).
+
+        ``qr_product_settings`` is unique on (organization_id, setting_type,
+        value). ``upsert_many`` resolves conflicts on ``(id)`` only, so a
+        seeded or earlier row carrying the same value under a different id
+        would abort the whole migration. Point the row (and the id mapping that
+        downstream FKs use) at the existing row instead.
+        """
+        if not out:
+            return
+        setting_type = out[0][2]
+        cur.execute(
+            "SELECT value, id::text FROM qr_product_settings "
+            "WHERE organization_id = %s AND setting_type = %s",
+            (self.org, setting_type),
+        )
+        existing = dict(cur.fetchall())
+        remap: dict[str, str] = {}
+        for index, row in enumerate(out):
+            actual = existing.get(row[3])
+            if actual and actual != row[0]:
+                remap[row[0]] = actual
+                out[index] = (actual, *row[1:])
+        if not remap:
+            return
+        for key, value in list(self.m_setting.items()):
+            if value in remap:
+                self.m_setting[key] = remap[value]
+        self.warn(
+            f"reused {len(remap)} existing qr_product_settings row(s) of type "
+            f"'{setting_type}' instead of inserting duplicates"
+        )
+
     def warn(self, msg: str) -> None:
         self.warnings.append(msg)
         print(f"   ! {msg}")
@@ -460,6 +512,7 @@ class Migrator:
                     ts(r.get("create_time")),
                 )
             )
+        self._reuse_setting_ids(cur, out)
         n1 = upsert_many(
             cur,
             "qr_product_settings",
@@ -510,6 +563,7 @@ class Migrator:
                     ts(r.get("created_at")),
                 )
             )
+        self._reuse_setting_ids(cur, out)
         n2 = upsert_many(
             cur,
             "qr_product_settings",
@@ -604,6 +658,7 @@ class Migrator:
             ],
             dm_out,
         )
+        self._reuse_setting_ids(cur, ps_out)
         n4 = upsert_many(
             cur,
             "qr_product_settings",
@@ -672,6 +727,7 @@ class Migrator:
             ],
             wp_out,
         )
+        self._reuse_setting_ids(cur, ps_out)
         n6 = upsert_many(
             cur,
             "qr_product_settings",
@@ -1592,7 +1648,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--container", default="postgres_db")
     p.add_argument("--pg-user", default="adminportal_user")
     p.add_argument("--pg-db", default="adminportal")
-    p.add_argument("--schema", default="elemage")
+    p.add_argument("--schema", default="elemage", type=_identifier_arg)
 
     # behaviour
     p.add_argument(

@@ -17,7 +17,9 @@ def _validate_gtin_value(value: str | None) -> str | None:
     normalized = value.strip()
     if not normalized:
         return None
-    if not normalized.isdigit():
+    # ``str.isdigit()`` is True for non-ASCII numerals (e.g. Arabic-Indic), which
+    # would be stored as a GTIN that barcode integrations cannot consume.
+    if not (normalized.isascii() and normalized.isdigit()):
         raise ValueError("GTIN must contain digits only")
     if not 8 <= len(normalized) <= 20:
         raise ValueError("GTIN must contain 8–20 digits")
@@ -82,9 +84,14 @@ def _populate_items_per_master_pack(instance: Any, linked_item: Any | None) -> N
     except Exception:
         return
     for unit in packaging_units:
-        if getattr(unit, "is_base_unit", False):
-            instance.items_per_master_pack = unit.items_per_master_pack
-            return
+        if not getattr(unit, "is_base_unit", False):
+            continue
+        # Retained-but-inactive packaging rows must not win: they describe a
+        # superseded unit and would surface a stale master-pack size.
+        if not getattr(unit, "is_active", True):
+            continue
+        instance.items_per_master_pack = unit.items_per_master_pack
+        return
 
 
 # ── QR Product ────────────────────────────────────────────────────────────────

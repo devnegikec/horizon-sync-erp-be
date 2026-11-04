@@ -37,8 +37,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 # Invitations are manageable by anyone holding an invite grant in the target
-# organization, or (read-only screens) by anyone who can read users there.
-_INVITE_PERMISSIONS = ("user.invite", "invitation.create")
+# organization, or (read-only screens) by anyone who can read users there. The
+# invite grants mirror ``InvitationService._has_invite_permission`` exactly, so
+# this guard never rejects a caller the service would accept.
+_INVITE_PERMISSIONS = (
+    "user.invite",
+    "invitation.create",
+    "user.create",
+    "user.manage",
+    "invitation.*",
+)
 _VIEW_INVITATION_PERMISSIONS = (
     "user.read",
     "user.invite",
@@ -102,6 +110,18 @@ async def send_invitation(
             inviter_permissions=current_user.permissions,
         )
         logger.info(f"Invitation created: {result['id']}")
+
+        if result.get("already_invited"):
+            # Idempotent re-invite: an unexpired invitation already exists, so the
+            # recipient keeps the link they were already sent. Deliberately no
+            # email — a second mail with a new/duplicate link just confuses the
+            # invitee and invalidates the first. Re-sending is an explicit action
+            # (POST /invitations/{id}/resend).
+            logger.info(
+                f"Active invitation already exists for {result['email']}; "
+                "no invitation email sent"
+            )
+            return InvitationResponse(**result)
 
         # Send invitation email in background
         email_service = EmailService()

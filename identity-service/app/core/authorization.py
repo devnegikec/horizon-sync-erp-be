@@ -101,6 +101,33 @@ def has_org_permission(permissions: list[str], required_permission: str) -> bool
     )
 
 
+def _platform_grants(permissions: list[str]) -> list[str]:
+    """Platform-level (cross-org) grants: ``system.admin`` + ``system_admin.*``."""
+    return [
+        perm
+        for perm in permissions or ()
+        if perm == "system.admin" or perm.startswith("system_admin.")
+    ]
+
+
+def cross_org_allows(
+    permissions: list[str], required_permissions: Sequence[str]
+) -> bool:
+    """Whether platform grants authorise a cross-org request.
+
+    ``system.admin`` / ``system_admin.master`` grant full access. Any other
+    ``system_admin.{domain}_{action}`` grant authorises only the action it maps
+    to, so ``system_admin.users_read`` must NOT authorise a write. The ``*.*``
+    wildcard is organization-scoped and never counts here.
+    """
+    platform = _platform_grants(permissions)
+    if not platform:
+        return False
+    if is_system_admin(platform):
+        return True
+    return any(_system_admin_grants(platform, code) for code in required_permissions)
+
+
 def require_organization_permission(
     current_user,
     organization_id: UUID,
@@ -125,9 +152,13 @@ def require_organization_permission(
     Raises:
         HTTPException: 403 when the caller is not a member or lacks the grant.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, (required_permission,)):
         return
 
+    # A platform grant that does not map to this action is not a denial on its
+    # own: the caller may well hold the permission through a role in *this*
+    # organization, so fall through to the organization-scoped checks instead
+    # of returning 403 before they run.
     if not current_user.organization_ids:
         # Authorization context was not populated (e.g. an older caller built
         # CurrentUser by hand) — fall back to the previous aggregate behaviour
@@ -163,9 +194,11 @@ def require_any_organization_permission(
     Used where an API is reachable through more than one grant — for example the
     invitation screens accept either ``user.invite`` or ``invitation.create``.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, required_permissions):
         return
 
+    # Unmapped platform grants are not a denial by themselves — see
+    # ``require_organization_permission``. The organization grant decides below.
     if not current_user.organization_ids:
         if not any(
             has_org_permission(current_user.permissions, code)
@@ -248,9 +281,11 @@ def require_shared_organization_permission(
     (otherwise 404, so existence is not leaked) and must hold the permission in
     one of those shared organizations.
     """
-    if is_cross_org_admin(current_user.permissions):
+    if cross_org_allows(current_user.permissions, (required_permission,)):
         return
 
+    # Unmapped platform grants are not a denial by themselves — the caller may
+    # hold the permission in an organization shared with the target.
     shared = shared_organization_ids(db, current_user.id, other_user_id)
     if not shared:
         raise HTTPException(
