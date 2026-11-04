@@ -3,12 +3,26 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    UploadFile,
+    status,
+)
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.authorization import (
+    has_permission,
     is_system_admin_or_owner,
+    require_organization_permission,
     require_permission,
+    require_shared_organization_permission,
     validate_user_in_organization,
 )
 from app.core.exceptions import DuplicateEmailException, UserNotFoundException
@@ -30,12 +44,60 @@ from app.schemas.user import (
     UserStatusCounts,
     UserUpdate,
 )
+from app.services.avatar_storage import (
+    AVATAR_CONTENT_TYPES,
+    decode_avatar_data_url,
+    delete_avatar,
+    is_avatar_data_url,
+    is_avatar_key,
+    read_avatar,
+    store_avatar,
+)
 from app.services.feature_flag_gate import get_disabled_resource_prefixes
 from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Public path the stored avatar keys are served from.
+_AVATAR_PATH = "/api/v1/identity/users/avatars/"
+
+
+def _avatar_key_from_url(url: str | None, user_id: UUID) -> str | None:
+    """Extract the storage key from an avatar URL **owned by ``user_id``**.
+
+    Only keys belonging to this user are returned: a crafted ``avatar_url``
+    pointing at someone else's served image must never become a key we later
+    read or delete.
+    """
+    if not url or _AVATAR_PATH not in url:
+        return None
+    key = url.split(_AVATAR_PATH, maxsplit=1)[1]
+    if not is_avatar_key(key) or not key.startswith(f"users/{user_id}/"):
+        return None
+    return key
+
+
+def _avatar_public_base(request: Request) -> str:
+    """Absolute base used to build the stored avatar URL."""
+    return (settings.media_base_url or str(request.base_url)).rstrip("/")
+
+
+def _require_user_permission(
+    current_user: CurrentUser, organization_id: str | UUID | None, permission: str
+) -> None:
+    """Require ``permission`` in the target organization when one is supplied.
+
+    Without an explicit organization the caller may act in any organization
+    where they hold the permission, so the aggregate check is used.
+    """
+    if organization_id:
+        require_organization_permission(
+            current_user, UUID(str(organization_id)), permission
+        )
+    else:
+        require_permission(current_user.permissions, permission)
 
 
 def _user_organization_ids(db: Session, user_id: UUID) -> list[UUID]:
@@ -149,10 +211,17 @@ async def list_users(
     organization_ids: list[UUID] | None = None
     if organization_id is not None:
         if not has_cross_org_user_access:
-            validate_user_in_organization(current_user.id, organization_id, db)
+            # RBAC must be evaluated *inside* that organization: a role held in
+            # another organization must not grant access here.
+            require_organization_permission(current_user, organization_id, "user.read")
         organization_ids = [organization_id]
     elif not has_cross_org_user_access:
-        organization_ids = _user_organization_ids(db, current_user.id)
+        # Only organizations where the caller actually holds user.read.
+        organization_ids = [
+            org_id
+            for org_id in _user_organization_ids(db, current_user.id)
+            if has_permission(current_user.permissions_in(org_id), "user.read")
+        ]
     if organization_ids is not None and not organization_ids:
         return UserListResponse(
             users=[],
@@ -383,22 +452,175 @@ async def get_my_permissions(
 )
 async def update_my_profile(
     body: UserSelfUpdate,
+    request: Request,
     current_user: CurrentUser = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
     """
     Update current user's own profile.
 
-    Allowed fields: first_name, last_name, display_name, phone, preferences, extra_data,
-    timezone, language. Any logged-in user can update these. No permission required.
+    Allowed fields: first_name, last_name, display_name, phone, avatar_url,
+    preferences, extra_data, timezone, language. Any logged-in user can update
+    these. No permission required.
+
+    ``avatar_url`` may be an absolute http(s) URL **or** an inline base64 data
+    URL (``data:image/png;base64,...``) as sent by browsers that read the file
+    client-side; inline payloads are stored and replaced with a served URL.
+    Multipart uploads should use ``POST /users/me/avatar`` instead.
     """
     user_service = UserService(db)
     payload = body.model_dump(exclude_unset=True)
+
+    stored_key: str | None = None
+    previous_key: str | None = None
+    raw_avatar = payload.get("avatar_url")
+    if is_avatar_data_url(raw_avatar):
+        user = user_service.get_user_by_id(current_user.id)
+        previous_key = _avatar_key_from_url(user.avatar_url, user.id)
+        try:
+            data, content_type = decode_avatar_data_url(raw_avatar)
+            stored_key = store_avatar(user.id, data, content_type)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=str(exc),
+            ) from exc
+        except Exception:  # noqa: BLE001 — surfaced as a storage outage
+            logger.exception("Avatar upload failed for user %s", current_user.id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Image storage is currently unavailable",
+            ) from None
+        payload["avatar_url"] = (
+            f"{_avatar_public_base(request)}{_AVATAR_PATH}{stored_key}"
+        )
+
     try:
         user = user_service.update_user(current_user.id, payload)
-        return UserProfileResponse.model_validate(user)
     except UserNotFoundException:
         raise
+
+    if stored_key and previous_key and previous_key != stored_key:
+        delete_avatar(previous_key)
+    return UserProfileResponse.model_validate(user)
+
+
+@router.post(
+    "/users/me/avatar",
+    response_model=UserProfileResponse,
+    summary="Upload or replace my profile image",
+    description=(
+        "Upload a PNG, JPEG or WebP image for the current user. Any previously "
+        "uploaded image is replaced. Use the returned `avatar_url` in the UI."
+    ),
+)
+async def upload_my_avatar(
+    request: Request,
+    file: UploadFile = File(..., description="PNG, JPEG or WebP image"),
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Upload/replace the current user's profile image. No permission required."""
+    content_type = (file.content_type or "").lower()
+    if content_type not in AVATAR_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PNG, JPEG and WebP images are supported",
+        )
+
+    data = await file.read(settings.avatar_max_bytes + 1)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Image file is empty",
+        )
+    if len(data) > settings.avatar_max_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=(
+                "Image exceeds the "
+                f"{settings.avatar_max_bytes // (1024 * 1024)} MB limit"
+            ),
+        )
+
+    user_service = UserService(db)
+    user = user_service.get_user_by_id(current_user.id)
+
+    try:
+        key = store_avatar(user.id, data, content_type)
+    except Exception:  # noqa: BLE001 — surfaced as a storage outage, not a 500
+        logger.exception("Avatar upload failed for user %s", user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Image storage is currently unavailable",
+        ) from None
+
+    previous_key = _avatar_key_from_url(user.avatar_url, user.id)
+    user = user_service.update_user(
+        user.id,
+        {"avatar_url": f"{_avatar_public_base(request)}{_AVATAR_PATH}{key}"},
+    )
+    if previous_key and previous_key != key:
+        delete_avatar(previous_key)
+
+    logger.info("Avatar updated for user %s", user.id)
+    return UserProfileResponse.model_validate(user)
+
+
+@router.delete(
+    "/users/me/avatar",
+    response_model=UserProfileResponse,
+    summary="Remove my profile image",
+    description="Clear the current user's profile image and delete the stored file.",
+)
+async def delete_my_avatar(
+    current_user: CurrentUser = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    """Remove the current user's profile image. No permission required."""
+    user_service = UserService(db)
+    user = user_service.get_user_by_id(current_user.id)
+    key = _avatar_key_from_url(user.avatar_url, user.id)
+
+    # update_user() drops None values, so clear the column directly.
+    user.avatar_url = None
+    db.commit()
+    db.refresh(user)
+
+    if key:
+        delete_avatar(key)
+    return UserProfileResponse.model_validate(user)
+
+
+@router.get(
+    "/users/avatars/{object_key:path}",
+    name="get_user_avatar",
+    include_in_schema=False,
+)
+async def get_user_avatar(object_key: str):
+    """Serve a stored profile image (declared before /users/{user_id})."""
+    try:
+        data, content_type = read_avatar(object_key)
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile image not found",
+        ) from None
+    except Exception:  # noqa: BLE001 — storage outage
+        logger.exception("Could not read avatar %s", object_key)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Image storage is currently unavailable",
+        ) from None
+
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.get(
@@ -413,17 +635,8 @@ async def get_user(
     db: Session = Depends(get_db),
 ):
     """Get user by ID. Requires user.read (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.read")
-    has_cross_org_user_access = current_user.user_type == "system_admin" or any(
-        p.startswith("system_admin.") for p in current_user.permissions
-    )
-    if not has_cross_org_user_access and not _users_share_organization(
-        db, current_user.id, user_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Caller must share an organization with the target AND hold user.read there.
+    require_shared_organization_permission(db, current_user, user_id, "user.read")
     user_service = UserService(db)
     try:
         user = user_service.get_user_by_id(user_id)
@@ -477,20 +690,12 @@ async def get_user_permissions(
     """
     from app.models.role import Permission, Role, RolePermission
 
-    require_permission(current_user.permissions, "user.read")
-
     logger.info(
         f"User {current_user.id} fetching permissions for user {user_id} in org {organization_id}"
     )
 
-    # Validate current user has access to the organization
-    try:
-        validate_user_in_organization(current_user.id, organization_id, db)
-    except HTTPException:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this organization",
-        )
+    # Membership + user.read inside *this* organization only.
+    require_organization_permission(current_user, organization_id, "user.read")
 
     # Validate target user is in the organization
     try:
@@ -524,15 +729,19 @@ async def get_user_permissions(
     # Custom (fine-grained) permissions come from the per-user custom role.
     custom_role_ids = [r.id for r in user_roles if r.code == custom_code]
     custom_permission_codes = (
-        db.query(Permission.code)
-        .join(RolePermission, RolePermission.permission_id == Permission.id)
-        .filter(
-            RolePermission.role_id.in_(custom_role_ids),
-            Permission.is_active == True,  # noqa: E712
+        (
+            db.query(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .filter(
+                RolePermission.role_id.in_(custom_role_ids),
+                Permission.is_active == True,  # noqa: E712
+            )
+            .distinct()
+            .all()
         )
-        .distinct()
-        .all()
-    ) if custom_role_ids else []
+        if custom_role_ids
+        else []
+    )
     custom_permissions = list(
         dict.fromkeys(code for (code,) in custom_permission_codes if code)
     )
@@ -584,7 +793,8 @@ async def create_user(
     db: Session = Depends(get_db),
 ):
     """Create user. Requires user.create permission."""
-    require_permission(current_user.permissions, "user.create")
+    # Creating a member of a specific organization requires the grant there.
+    _require_user_permission(current_user, body.organization_id, "user.create")
 
     # Escalation guard: only callers with system_admin.master may create system_admin users
     if body.user_type and body.user_type == UserType.SYSTEM_ADMIN.value:
@@ -682,15 +892,8 @@ async def update_user(
     db: Session = Depends(get_db),
 ):
     """Update user. Requires user.update (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.update")
-    if not (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
-    ) and not _users_share_organization(db, current_user.id, user_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Shared organization + user.update within that organization.
+    require_shared_organization_permission(db, current_user, user_id, "user.update")
     if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
         db, user_id
     ):
@@ -748,15 +951,8 @@ async def delete_user(
     db: Session = Depends(get_db),
 ):
     """Soft delete user. Requires user.delete (or user.* / *.*). Target user must be in your org."""
-    require_permission(current_user.permissions, "user.delete")
-    if not (
-        current_user.user_type == "system_admin"
-        or any(p.startswith("system_admin.") for p in current_user.permissions)
-    ) and not _users_share_organization(db, current_user.id, user_id):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+    # Shared organization + user.delete within that organization.
+    require_shared_organization_permission(db, current_user, user_id, "user.delete")
     if _is_org_admin_without_owner_role(current_user, db) and _user_has_owner_role(
         db, user_id
     ):
@@ -909,20 +1105,12 @@ async def update_user_roles(
     - **organization_id**: UUID of the organization
     - **role_ids**: List of role UUIDs to assign (replaces existing)
     """
-    require_permission(current_user.permissions, "user.update")
+    require_organization_permission(current_user, body.organization_id, "user.update")
 
     if not _users_share_organization(db, current_user.id, user_id):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
-        )
-
-    try:
-        validate_user_in_organization(current_user.id, body.organization_id, db)
-    except HTTPException:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have access to this organization",
         )
 
     # Verify target user is also in the organization

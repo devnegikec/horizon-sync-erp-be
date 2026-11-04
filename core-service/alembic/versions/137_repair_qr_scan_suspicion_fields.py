@@ -68,24 +68,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    """Remove the objects repaired by this migration."""
-    if not has_table("qr_scan_events"):
-        return
+    """Intentionally a no-op.
 
-    for index_name in (
-        "ix_qr_scan_events_review_status",
-        "ix_qr_scan_events_risk_score",
-        "ix_qr_scan_events_is_suspicious",
-    ):
-        if has_index("qr_scan_events", index_name):
-            op.drop_index(index_name, table_name="qr_scan_events")
-
-    for column_name in (
-        "flagged_at",
-        "review_status",
-        "suspicious_reasons",
-        "risk_score",
-        "is_suspicious",
-    ):
-        if has_column("qr_scan_events", column_name):
-            op.drop_column("qr_scan_events", column_name)
+    These columns and indexes belong to revision 116 (and friends); this
+    revision only fills in what a drifted database was missing. Dropping them
+    on downgrade would erase scan-review data that the owning revisions are
+    still responsible for.
+    """

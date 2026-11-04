@@ -81,7 +81,10 @@ class QSealMapResponse(BaseModel):
 
 class QSealScanRequest(BaseModel):
     serial_number: str = Field(
-        ..., min_length=1, max_length=75, description="Serial number of the scanned QSeal node"
+        ...,
+        min_length=1,
+        max_length=75,
+        description="Serial number of the scanned QSeal node",
     )
     device_type: str | None = None
     os: str | None = None
@@ -89,7 +92,9 @@ class QSealScanRequest(BaseModel):
     ip_address: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    accuracy_meters: int | None = Field(None, ge=0, le=100_000)
+    # Browsers report ``coords.accuracy`` as a float (e.g. 12.5), so a fractional
+    # value must not fail validation and drop the whole public scan.
+    accuracy_meters: float | None = Field(None, ge=0, le=100_000)
     city: str | None = None
     state: str | None = None
     country: str | None = None

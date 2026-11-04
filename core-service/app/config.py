@@ -114,7 +114,9 @@ class Settings(BaseSettings):
     brand_key_encryption_secret: str = "3GQ2g9v0Qm1x3vJm9q0c8sQ2xJ5xv9k8aYv4lq3n2hA="
 
     # QR Domain & object storage
-    qr_domain: str = "horizon.ciphercode.ai"
+    # Only used when QR_BASE_URL is empty (QR_BASE_URL wins — it carries the
+    # scheme). Staging serves the platform at https://app.ciphercode.ai.
+    qr_domain: str = "app.ciphercode.ai"
     qr_base_url: str = ""
     qr_shortener_enabled: bool = True
     qr_shortener_url: str = "https://de5be4rdmboho.cloudfront.net/prod/"

@@ -396,6 +396,9 @@ class TopupOrder(Base):
     status = Column(String(20), nullable=False, default="created", index=True)
     provider = Column(String(30), nullable=True)
     provider_ref = Column(String(191), nullable=True)
+    # Provider payment id (``pay_...`` in Razorpay), stored separately from the
+    # order id so the webhook and the checkout callback stay idempotent.
+    provider_payment_id = Column(String(191), nullable=True)
     checkout_url = Column(Text, nullable=True)
     idempotency_key = Column(String(120), nullable=False)
     paid_at = Column(DateTime(timezone=True), nullable=True)

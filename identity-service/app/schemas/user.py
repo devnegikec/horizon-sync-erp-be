@@ -5,6 +5,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.services.avatar_storage import (
+    AVATAR_DATA_URL_PATTERN,
+    max_base64_length,
+)
+
+# ``users.avatar_url`` is a varchar(500), so anything persisted there must fit.
+STORED_AVATAR_URL_MAX_LENGTH = 500
+# Inline uploads arrive base64-encoded; allow the largest supported image plus
+# the ``data:image/...;base64,`` prefix.
+MAX_AVATAR_FIELD_LENGTH = max_base64_length() + 100
+
 
 class UserBase(BaseModel):
     """Base user schema with common fields"""
@@ -54,10 +65,41 @@ class UserSelfUpdate(BaseModel):
     last_name: str | None = Field(None, min_length=2, max_length=100)
     display_name: str | None = Field(None, max_length=200)
     phone: str | None = Field(None, max_length=20)
+    # Either an absolute http(s) URL of an already-hosted image, or an inline
+    # ``data:image/...;base64,...`` payload from the browser. Inline payloads are
+    # persisted by ``PATCH /users/me`` and replaced with a served URL. Prefer
+    # ``POST /users/me/avatar`` (multipart), which avoids base64 inflation.
+    avatar_url: str | None = Field(None, max_length=MAX_AVATAR_FIELD_LENGTH)
     preferences: dict | None = None
     extra_data: dict | None = None
     timezone: str | None = Field(None, max_length=50)
     language: str | None = Field(None, max_length=10)
+
+    @field_validator("avatar_url")
+    @classmethod
+    def validate_avatar_url(cls, value: str | None) -> str | None:
+        """Accept an absolute http(s) URL or a base64 image data URL."""
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            return None
+        if value.lower().startswith("data:"):
+            # The endpoint decodes and stores this payload, so only the format
+            # needs checking here.
+            if not AVATAR_DATA_URL_PATTERN.match(value):
+                raise ValueError(
+                    "avatar_url data URL must be a base64 PNG, JPEG or WebP image"
+                )
+            return value
+        if not value.lower().startswith(("http://", "https://")):
+            raise ValueError("avatar_url must be an absolute http(s) URL")
+        if len(value) > STORED_AVATAR_URL_MAX_LENGTH:
+            raise ValueError(
+                f"avatar_url must be at most {STORED_AVATAR_URL_MAX_LENGTH} "
+                "characters; upload the file with POST /users/me/avatar instead"
+            )
+        return value
 
 
 class UserResponse(UserBase):
@@ -65,6 +107,7 @@ class UserResponse(UserBase):
 
     id: UUID
     display_name: str | None = None
+    avatar_url: str | None = None
     user_type: str
     status: str
     email_verified: bool
@@ -79,6 +122,7 @@ class UserProfileResponse(UserBase):
 
     id: UUID
     display_name: str | None = None
+    avatar_url: str | None = None
     user_type: str
     status: str
     email_verified: bool

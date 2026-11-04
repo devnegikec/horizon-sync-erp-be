@@ -72,6 +72,35 @@ def upgrade() -> None:
             )
         )
 
+    # Indexes owned by revisions 115 and 068. A drifted database has the columns
+    # but not their indexes, so filtered QSeal analytics degrade to full scans.
+    for index_name, column_name in (
+        ("ix_qr_scan_events_product_id", "product_id"),
+        ("ix_qr_scan_events_block_id", "block_id"),
+        ("ix_qr_scan_events_qseal_track_id", "qseal_track_id"),
+        ("ix_qr_scan_events_qseal_parameter_id", "qseal_parameter_id"),
+        ("ix_qr_scan_events_batch", "batch"),
+        ("ix_qr_scan_events_qseal_type", "qseal_type"),
+        ("ix_qr_scan_events_verification_status", "verification_status"),
+    ):
+        conn.execute(
+            sa.text(
+                f"CREATE INDEX IF NOT EXISTS {index_name} "
+                f"ON qr_scan_events ({column_name})"
+            )
+        )
+
+    # ``event_id`` only provides its idempotency guarantee together with the
+    # unique partial index created by revision 068. A drifted database stamped
+    # past 068 has the column but not the index, which would let concurrent
+    # retries insert duplicate scan events.
+    conn.execute(
+        sa.text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_qr_scan_events_event_id "
+            "ON qr_scan_events (event_id) WHERE event_id IS NOT NULL"
+        )
+    )
+
 
 def downgrade() -> None:
     # This revision only repairs additive columns. The owning migrations remain
