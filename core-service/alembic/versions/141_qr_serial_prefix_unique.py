@@ -16,6 +16,8 @@ Create Date: 2026-10-28
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 from app.alembic_guards import has_index, has_table
 
@@ -67,7 +69,8 @@ def _repair_duplicates() -> int:
     """Collapse duplicate serial prefixes onto the oldest row."""
     if has_table("qr_products"):
         op.execute(_REPOINT_SQL)
-    return op.get_bind().execute(_RETIRE_SQL).rowcount or 0
+    # ``Connection.execute`` needs an executable, not a plain string.
+    return op.get_bind().execute(sa.text(_RETIRE_SQL)).rowcount or 0
 
 
 def upgrade() -> None:

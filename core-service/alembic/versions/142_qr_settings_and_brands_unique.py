@@ -16,6 +16,8 @@ Create Date: 2026-10-28
 
 from collections.abc import Sequence
 
+import sqlalchemy as sa
+
 from alembic import op
 from app.alembic_guards import has_index, has_table
 
@@ -78,7 +80,8 @@ def _repair_duplicates(
     return (
         op.get_bind()
         .execute(
-            f"""
+            sa.text(
+                f"""
             WITH ranked AS ({ranked})
             UPDATE {table} x
                SET deleted_at = now()
@@ -86,6 +89,7 @@ def _repair_duplicates(
              WHERE x.id = r.id
                AND r.id <> r.keeper_id
             """
+            )
         )
         .rowcount
         or 0
