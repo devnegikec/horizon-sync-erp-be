@@ -37,7 +37,6 @@ from app.schemas.qr_product import (
     QRBlockCreate,
     QRBlockResponse,
     QRBlockStatusCounts,
-    SerialCollisionCheckResponse,
     QRProductCreate,
     QRProductImageResponse,
     QRProductImportResult,
@@ -48,6 +47,7 @@ from app.schemas.qr_product import (
     QRValidateRequest,
     QRValidateResponse,
     ScanAnalyticsResponse,
+    SerialCollisionCheckResponse,
 )
 from app.services.qr_block_queue import enqueue_qr_block
 from app.services.qr_product_bulk_service import QRProductBulkService

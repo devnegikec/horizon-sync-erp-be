@@ -65,8 +65,13 @@ class QRProductSettingService:
             return self.repo.create(payload)
         except IntegrityError as exc:
             self.db.rollback()
-            if "qr_prod_settings" in str(exc).lower() or data.setting_type == "serial_prefix":
-                raise self._duplicate_error(data.setting_type, normalized_value) from exc
+            if (
+                "qr_prod_settings" in str(exc).lower()
+                or data.setting_type == "serial_prefix"
+            ):
+                raise self._duplicate_error(
+                    data.setting_type, normalized_value
+                ) from exc
             raise
 
     def list_settings(
@@ -110,7 +115,9 @@ class QRProductSettingService:
             )
         payload = {k: v for k, v in data.model_dump().items() if v is not None}
         if "value" in payload:
-            payload["value"] = self._normalize_value(setting.setting_type, payload["value"])
+            payload["value"] = self._normalize_value(
+                setting.setting_type, payload["value"]
+            )
             if self.repo.value_exists(
                 setting.setting_type, payload["value"], organization_id, setting_id
             ):
@@ -120,8 +127,13 @@ class QRProductSettingService:
             return self.repo.update(setting, payload)
         except IntegrityError as exc:
             self.db.rollback()
-            if "qr_prod_settings" in str(exc).lower() or setting.setting_type == "serial_prefix":
-                raise self._duplicate_error(setting.setting_type, payload.get("value", setting.value)) from exc
+            if (
+                "qr_prod_settings" in str(exc).lower()
+                or setting.setting_type == "serial_prefix"
+            ):
+                raise self._duplicate_error(
+                    setting.setting_type, payload.get("value", setting.value)
+                ) from exc
             raise
 
     def delete_setting(

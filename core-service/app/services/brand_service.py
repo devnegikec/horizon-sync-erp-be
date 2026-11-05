@@ -41,13 +41,21 @@ class BrandService:
         name = data.name.strip()
         short_code = data.short_code.strip().lower()
         if self.repo.value_exists("name", name, organization_id):
-            raise HTTPException(status_code=409, detail=f"Brand name '{name}' already exists for this organization.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Brand name '{name}' already exists for this organization.",
+            )
         if self.repo.value_exists("short_code", short_code, organization_id):
-            raise HTTPException(status_code=409, detail=f"Brand short code '{short_code}' already exists for this organization.")
+            raise HTTPException(
+                status_code=409,
+                detail=f"Brand short code '{short_code}' already exists for this organization.",
+            )
 
         encrypted_private_key, public_key_hex = self.key_service.generate_key_pair()
 
-        brand_data = data.model_copy(update={"name": name, "short_code": short_code}).model_dump()
+        brand_data = data.model_copy(
+            update={"name": name, "short_code": short_code}
+        ).model_dump()
         brand_data["organization_id"] = organization_id
         brand_data["public_key"] = public_key_hex
         brand_data["private_key_encrypted"] = encrypted_private_key
@@ -59,7 +67,10 @@ class BrandService:
         except IntegrityError as exc:
             self.db.rollback()
             if "brand" in str(exc).lower():
-                raise HTTPException(status_code=409, detail="A brand with the same name or short code already exists for this organization.") from exc
+                raise HTTPException(
+                    status_code=409,
+                    detail="A brand with the same name or short code already exists for this organization.",
+                ) from exc
             raise
 
     def get_by_id(self, brand_id: UUID, organization_id: UUID) -> Brand:
@@ -160,11 +171,19 @@ class BrandService:
         if "name" in raw and raw["name"] is not None:
             raw["name"] = raw["name"].strip()
             if self.repo.value_exists("name", raw["name"], organization_id, brand_id):
-                raise HTTPException(status_code=409, detail=f"Brand name '{raw['name']}' already exists for this organization.")
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Brand name '{raw['name']}' already exists for this organization.",
+                )
         if "short_code" in raw and raw["short_code"] is not None:
             raw["short_code"] = raw["short_code"].strip().lower()
-            if self.repo.value_exists("short_code", raw["short_code"], organization_id, brand_id):
-                raise HTTPException(status_code=409, detail=f"Brand short code '{raw['short_code']}' already exists for this organization.")
+            if self.repo.value_exists(
+                "short_code", raw["short_code"], organization_id, brand_id
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Brand short code '{raw['short_code']}' already exists for this organization.",
+                )
 
         raw["updated_by"] = user_id
         try:
@@ -172,5 +191,8 @@ class BrandService:
         except IntegrityError as exc:
             self.db.rollback()
             if "brand" in str(exc).lower():
-                raise HTTPException(status_code=409, detail="A brand with the same name or short code already exists for this organization.") from exc
+                raise HTTPException(
+                    status_code=409,
+                    detail="A brand with the same name or short code already exists for this organization.",
+                ) from exc
             raise

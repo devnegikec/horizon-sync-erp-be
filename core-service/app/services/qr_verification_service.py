@@ -29,9 +29,9 @@ class QRVerificationService:
         self.key_service = KeyService(settings.brand_key_encryption_secret)
         self.secure_qr_rate_limiter = SecureQRRateLimiter()
 
-    def verify(
+    def verify(  # noqa: C901
         self, data: PublicQRVerifyRequest, *, client_ip: str | None = None
-    ) -> dict:  # noqa: C901
+    ) -> dict:
         identity = self.repo.resolve_active_item_identity(data.serial_number)
         if identity is None:
             return self._invalid_response()

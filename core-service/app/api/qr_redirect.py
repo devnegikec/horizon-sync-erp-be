@@ -277,11 +277,7 @@ async def redirect_qr_to_client(
             referrer=request.headers.get("referer"),
             language=request.headers.get("accept-language"),
         )
-        if (
-            captured_id
-            and captured_id == event_id
-            and background_tasks is not None
-        ):
+        if captured_id and captured_id == event_id and background_tasks is not None:
             background_tasks.add_task(
                 enrich_scan_location,
                 captured_id,
@@ -298,10 +294,6 @@ async def redirect_qr_to_client(
     db.rollback()
     destination = _append_query(redirect_url, params)
     accept = request.headers.get("accept", "")
-    if (
-        captured_id
-        and isinstance(accept, str)
-        and "text/html" in accept.lower()
-    ):
+    if captured_id and isinstance(accept, str) and "text/html" in accept.lower():
         return _browser_location_page(destination, str(captured_id))
     return RedirectResponse(url=destination, status_code=status.HTTP_302_FOUND)

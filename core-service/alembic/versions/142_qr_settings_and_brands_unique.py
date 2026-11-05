@@ -29,9 +29,11 @@ BRAND_SHORT_CODE_INDEX = "uq_brands_org_short_code_ci"
 
 
 def _duplicate_groups(table: str, expression: str, where: str):
-    return op.get_bind().execute(
-        sa.text(
-            f"""
+    return (
+        op.get_bind()
+        .execute(
+            sa.text(
+                f"""
             SELECT organization_id, {expression} AS value_ci, count(*) AS n
             FROM {table}
             WHERE {where}
@@ -39,17 +41,19 @@ def _duplicate_groups(table: str, expression: str, where: str):
             HAVING count(*) > 1
             ORDER BY 3 DESC, 2
             """
+            )
         )
-    ).fetchall()
+        .fetchall()
+    )
 
 
-def _raise_if_duplicates(table: str, expression: str, where: str, description: str) -> None:
+def _raise_if_duplicates(
+    table: str, expression: str, where: str, description: str
+) -> None:
     duplicates = _duplicate_groups(table, expression, where)
     if not duplicates:
         return
-    preview = "; ".join(
-        f"{row[0]} / '{row[1]}' x{row[2]}" for row in duplicates[:10]
-    )
+    preview = "; ".join(f"{row[0]} / '{row[1]}' x{row[2]}" for row in duplicates[:10])
     raise RuntimeError(
         f"Cannot create unique {description} index: {len(duplicates)} "
         f"duplicate group(s) exist — {preview}. Resolve the duplicates, then "

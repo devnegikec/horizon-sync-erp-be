@@ -26,6 +26,7 @@ from app.services.public_scan_capture_service import (
     enrich_scan_location,
 )
 from app.services.qr_verification_service import QRVerificationService
+from app.services.secure_qr_rate_limit_service import allow_scan_location_update
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -102,7 +103,6 @@ async def verify_public_qr(
             language=request.headers.get("accept-language"),
         )
         if captured_id:
-            print(f"Captured scan event ID: {captured_id}")
             result["scan_event_id"] = captured_id
             if captured_id == event_id:
                 background_tasks.add_task(
@@ -125,9 +125,18 @@ async def verify_public_qr(
 async def update_public_scan_location(
     event_id: UUID,
     data: PublicScanLocationUpdate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> None:
-    print(f"Updating location for event_id: {event_id}")
+    # This endpoint is unauthenticated and one accepted call can trigger an
+    # outbound reverse-geocode request, so the source needs its own budget
+    # before any provider interaction happens.
+    if not allow_scan_location_update(_client_ip(request)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many location updates. Try again shortly.",
+        )
+
     location_names = await reverse_geocode(data.latitude, data.longitude)
     updated = PublicScanCaptureService(db).update_browser_location(
         event_id,

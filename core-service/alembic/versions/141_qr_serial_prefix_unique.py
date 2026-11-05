@@ -39,7 +39,9 @@ _DUPLICATES_SQL = sa.text(
 
 
 def upgrade() -> None:
-    if not has_table("qr_product_settings") or has_index("qr_product_settings", INDEX_NAME):
+    if not has_table("qr_product_settings") or has_index(
+        "qr_product_settings", INDEX_NAME
+    ):
         return
 
     duplicates = op.get_bind().execute(_DUPLICATES_SQL).fetchall()
@@ -65,5 +67,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    if has_table("qr_product_settings") and has_index("qr_product_settings", INDEX_NAME):
+    if has_table("qr_product_settings") and has_index(
+        "qr_product_settings", INDEX_NAME
+    ):
         op.execute(f"DROP INDEX IF EXISTS {INDEX_NAME}")

@@ -58,9 +58,7 @@ class SecureQRRateLimiter:
         if lockout_ttl:
             return SecureQRRateLimitDecision("lockout", lockout_ttl)
 
-        source_count = self.cache.increment_with_ttl(
-            self._source_key(client_ip), 60
-        )
+        source_count = self.cache.increment_with_ttl(self._source_key(client_ip), 60)
         if (
             source_count is not None
             and source_count > settings.secure_qr_rate_limit_per_minute
@@ -93,3 +91,22 @@ class SecureQRRateLimiter:
         """Clear failed-attempt state after a successful code submission."""
         self.cache.delete(self._failure_key(serial_number, client_ip))
         self.cache.delete(self._lockout_key(serial_number, client_ip))
+
+
+def allow_scan_location_update(client_ip: str | None) -> bool:
+    """Per-source budget for the unauthenticated browser-location endpoint.
+
+    Each accepted call may trigger one outbound reverse-geocode request, and the
+    provider slot (one request per second) is global, so an unthrottled public
+    endpoint would let a single caller starve geocoding for everyone. Uses a
+    fixed one-minute window and fails open when Redis is unavailable, matching
+    the rest of the limiter.
+    """
+    key = (
+        f"{SecureQRRateLimiter.KEY_PREFIX}:scan-location:"
+        f"{SecureQRRateLimiter._fingerprint(client_ip or 'unknown')}"
+    )
+    count = cache.increment_window(key, 60)
+    if count is None:
+        return True
+    return count <= settings.public_scan_location_rate_limit_per_minute

@@ -354,7 +354,9 @@ def test_secure_code_lockout_returns_retry_window_without_revealing_code_state()
         reason="lockout", retry_after_seconds=900
     )
 
-    result = service.verify(_request(secure_code="WRONG-CODE"), client_ip="203.0.113.10")
+    result = service.verify(
+        _request(secure_code="WRONG-CODE"), client_ip="203.0.113.10"
+    )
 
     assert result["verification_status"] == "invalid"
     assert result["requires_action"] is True

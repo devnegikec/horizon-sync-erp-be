@@ -97,6 +97,26 @@ class RedisCache:
             logger.warning(f"Cache increment error for key {key}: {e}")
             return None
 
+    def increment_window(self, key: str, ttl: int) -> int | None:
+        """Increment a fixed-window counter, opening the TTL only once.
+
+        Unlike ``increment_with_ttl`` the expiry is set when the window opens
+        and is never refreshed, so a caller cannot keep a counter alive forever
+        by trickling requests in just under the TTL.
+        """
+        try:
+            client = self._get_client()
+            pipeline = client.pipeline()
+            pipeline.incr(key)
+            pipeline.ttl(key)
+            count, remaining = pipeline.execute()
+            if remaining < 0:
+                client.expire(key, ttl)
+            return int(count)
+        except RedisError as e:
+            logger.warning(f"Cache window increment error for key {key}: {e}")
+            return None
+
     def ttl(self, key: str) -> int | None:
         """Return a key's remaining TTL, or ``None`` if Redis is unavailable."""
         try:

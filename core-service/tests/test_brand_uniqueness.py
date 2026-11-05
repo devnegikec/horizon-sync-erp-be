@@ -57,7 +57,9 @@ def test_brand_fields_enforce_maximum_lengths(field, value):
 )
 def test_duplicate_brand_values_return_conflict(duplicate_field, expected_detail):
     service = make_service()
-    service.repo.value_exists.side_effect = lambda field, *_args: field == duplicate_field
+    service.repo.value_exists.side_effect = (
+        lambda field, *_args: field == duplicate_field
+    )
 
     with pytest.raises(HTTPException) as exc_info:
         service.create(
@@ -86,5 +88,8 @@ def test_duplicate_brand_name_returns_conflict_on_update():
         )
 
     assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == "Brand name 'Acme Corp' already exists for this organization."
+    assert (
+        exc_info.value.detail
+        == "Brand name 'Acme Corp' already exists for this organization."
+    )
     service.repo.update.assert_not_called()

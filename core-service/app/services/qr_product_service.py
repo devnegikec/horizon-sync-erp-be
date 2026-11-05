@@ -758,7 +758,7 @@ class QRProductService:
         update_dict["updated_by"] = user_id
         try:
             product = self.product_repo.update(product, update_dict)
-        except IntegrityError as exc:
+        except IntegrityError:
             self.db.rollback()
             raise
 
@@ -2120,8 +2120,10 @@ class QRProductService:
 
         # A consumed One-Time QR must remain consumed. Validate the complete
         # selection before mutating anything so the operation is all-or-nothing.
-        if active and block.qr_type == QRType.ONE_TIME.value and any(
-            item.is_verify for item in items
+        if (
+            active
+            and block.qr_type == QRType.ONE_TIME.value
+            and any(item.is_verify for item in items)
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

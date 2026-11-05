@@ -7,7 +7,10 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from app.schemas.qr_product_setting import QRProductSettingCreate, QRProductSettingUpdate
+from app.schemas.qr_product_setting import (
+    QRProductSettingCreate,
+    QRProductSettingUpdate,
+)
 from app.services.qr_product_setting_service import QRProductSettingService
 
 
@@ -34,7 +37,9 @@ def test_serial_prefix_is_trimmed_and_normalized_before_create():
     )
 
     assert result["value"] == "PH"
-    service.repo.value_exists.assert_called_once_with("serial_prefix", "PH", result["organization_id"])
+    service.repo.value_exists.assert_called_once_with(
+        "serial_prefix", "PH", result["organization_id"]
+    )
 
 
 def test_duplicate_serial_prefix_returns_conflict():
@@ -53,7 +58,10 @@ def test_duplicate_serial_prefix_returns_conflict():
         )
 
     assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == "Serial prefix 'PH' already exists for this organization."
+    assert (
+        exc_info.value.detail
+        == "Serial prefix 'PH' already exists for this organization."
+    )
     service.repo.create.assert_not_called()
 
 
@@ -72,7 +80,10 @@ def test_duplicate_serial_prefix_returns_conflict_on_update():
         )
 
     assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == "Serial prefix 'PH' already exists for this organization."
+    assert (
+        exc_info.value.detail
+        == "Serial prefix 'PH' already exists for this organization."
+    )
     service.repo.update.assert_not_called()
 
 

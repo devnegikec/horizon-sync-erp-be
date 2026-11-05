@@ -19,18 +19,22 @@ depends_on: str | Sequence[str] | None = None
 
 
 def _raise_if_oversized(column: str, maximum: int) -> None:
-    rows = op.get_bind().execute(
-        sa.text(
-            f"""
+    rows = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                f"""
             SELECT id, char_length({column}) AS value_length
             FROM brands
             WHERE {column} IS NOT NULL AND char_length({column}) > :maximum
             ORDER BY value_length DESC
             LIMIT 10
             """
-        ),
-        {"maximum": maximum},
-    ).fetchall()
+            ),
+            {"maximum": maximum},
+        )
+        .fetchall()
+    )
     if rows:
         preview = "; ".join(f"{row[0]} ({row[1]} characters)" for row in rows)
         raise RuntimeError(

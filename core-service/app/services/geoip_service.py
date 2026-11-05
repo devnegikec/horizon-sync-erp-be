@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 IPINFO_URL = "https://ipinfo.io/{}/json"
 _IPINFO_CACHE_TTL_SECONDS = 24 * 60 * 60
 _IPINFO_CACHE_PREFIX = "qseal:ipinfo:lookup:"
-NOMINATIM_REVERSE_GEOCODING_URL = "https://nominatim.openstreetmap.org/reverse"
 _NOMINATIM_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 _NOMINATIM_CACHE_PREFIX = "qseal:nominatim:reverse:"
 _NOMINATIM_RATE_KEY = "qseal:nominatim:request-slot"
@@ -29,6 +28,17 @@ _NOMINATIM_LOCK_KEY = "qseal:nominatim:request-lock"
 _NOMINATIM_LOCK_TIMEOUT_SECONDS = 20
 _geoip_redis: aioredis.Redis | None = None
 _geoip_redis_init_lock = asyncio.Lock()
+
+
+def _reverse_geocoding_user_agent() -> str:
+    """Identify the application to the geocoding provider.
+
+    Nominatim's usage policy requires a real agent string with a way to contact
+    the operator; deployments should set ``REVERSE_GEOCODING_CONTACT``.
+    """
+    agent = f"Brandwise-QSeal/{settings.app_version}"
+    contact = (settings.reverse_geocoding_contact or "").strip()
+    return f"{agent} (+{contact})" if contact else agent
 
 
 def _is_private_ip(ip: str) -> bool:
@@ -54,8 +64,7 @@ async def lookup_ip(ip_address: str | None) -> dict | None:
 
     normalized_ip = str(ipaddress.ip_address(ip_address))
     cache_key = (
-        _IPINFO_CACHE_PREFIX
-        + hashlib.sha256(normalized_ip.encode("ascii")).hexdigest()
+        _IPINFO_CACHE_PREFIX + hashlib.sha256(normalized_ip.encode("ascii")).hexdigest()
     )
     redis_client = None
     try:
@@ -125,11 +134,20 @@ async def lookup_ip(ip_address: str | None) -> dict | None:
 async def reverse_geocode(latitude: float, longitude: float) -> dict | None:
     """Translate browser GPS coordinates into a cached, human-readable place.
 
+    The provider must be configured explicitly (``REVERSE_GEOCODING_URL``);
+    there is deliberately no public default, because sending visitor GPS to a
+    third party is a deployment decision, not an implicit one.
+
     Nominatim's public endpoint is limited to one request per second. A Redis
     lock and expiring request slot enforce that limit across core-service
     processes; the coordinate is rounded for lookup and its cache key is
     hashed so precise GPS values are not stored in Redis keys.
     """
+    url = settings.reverse_geocoding_url
+    if not url:
+        logger.info("reverse geocoding skipped: no provider configured")
+        return None
+
     # City/region/country labels do not need street-level precision. Rounding
     # also increases cache hits without displaying the coordinates to users.
     lookup_latitude = round(latitude, 4)
@@ -138,7 +156,6 @@ async def reverse_geocode(latitude: float, longitude: float) -> dict | None:
         f"{lookup_latitude:.4f},{lookup_longitude:.4f}".encode("ascii")
     ).hexdigest()
     cache_key = f"{_NOMINATIM_CACHE_PREFIX}{cache_digest}"
-    url = settings.reverse_geocoding_url or NOMINATIM_REVERSE_GEOCODING_URL
     params = {
         "lat": lookup_latitude,
         "lon": lookup_longitude,
@@ -169,15 +186,13 @@ async def reverse_geocode(latitude: float, longitude: float) -> dict | None:
 
             # Redis expiry provides a shared one-second interval, independent
             # of worker clock skew.
-            while not await redis_client.set(
-                _NOMINATIM_RATE_KEY, "1", nx=True, ex=1
-            ):
+            while not await redis_client.set(_NOMINATIM_RATE_KEY, "1", nx=True, ex=1):
                 await asyncio.sleep(0.05)
 
             async with httpx.AsyncClient(
                 timeout=settings.reverse_geocoding_timeout_seconds,
                 headers={
-                    "User-Agent": f"Brandwise-QSeal/{settings.app_version}",
+                    "User-Agent": _reverse_geocoding_user_agent(),
                     "Accept-Language": "en",
                 },
             ) as client:

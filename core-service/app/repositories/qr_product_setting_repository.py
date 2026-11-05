@@ -1,7 +1,7 @@
 """Repository for QR Product Settings"""
 
+import builtins
 from datetime import UTC, datetime
-from typing import List
 from uuid import UUID
 
 from sqlalchemy import func, or_
@@ -23,7 +23,9 @@ class QRProductSettingRepository:
         self.db.refresh(setting)
         return setting
 
-    def get_by_id(self, setting_id: UUID, organization_id: UUID) -> QRProductSetting | None:
+    def get_by_id(
+        self, setting_id: UUID, organization_id: UUID
+    ) -> QRProductSetting | None:
         setting = (
             self.db.query(QRProductSetting)
             .filter(
@@ -34,7 +36,9 @@ class QRProductSettingRepository:
             .first()
         )
         if setting:
-            setting.usage_count = self.reference_counts([setting.id], organization_id).get(setting.id, 0)
+            setting.usage_count = self.reference_counts(
+                [setting.id], organization_id
+            ).get(setting.id, 0)
         return setting
 
     def value_exists(
@@ -50,7 +54,9 @@ class QRProductSettingRepository:
             QRProductSetting.organization_id == organization_id,
             QRProductSetting.deleted_at.is_(None),
         )
-        q = q.filter(func.lower(func.trim(QRProductSetting.value)) == normalized_value.lower())
+        q = q.filter(
+            func.lower(func.trim(QRProductSetting.value)) == normalized_value.lower()
+        )
         if exclude_id:
             q = q.filter(QRProductSetting.id != exclude_id)
         return q.first() is not None
@@ -84,18 +90,25 @@ class QRProductSettingRepository:
             .limit(page_size)
             .all()
         )
-        usage_counts = self.reference_counts([setting.id for setting in items], organization_id)
+        usage_counts = self.reference_counts(
+            [setting.id for setting in items], organization_id
+        )
         for setting in items:
             setting.usage_count = usage_counts.get(setting.id, 0)
         return items, total
 
-    def reference_counts(self, setting_ids: List[UUID], organization_id: UUID) -> dict[UUID, int]:
-        counts = {setting_id: 0 for setting_id in setting_ids}
+    def reference_counts(
+        self, setting_ids: builtins.list[UUID], organization_id: UUID
+    ) -> dict[UUID, int]:
+        counts = dict.fromkeys(setting_ids, 0)
         if not setting_ids:
             return counts
 
         for model, columns in (
-            (QRProduct, (QRProduct.shelf_life_setting_id, QRProduct.serial_prefix_setting_id)),
+            (
+                QRProduct,
+                (QRProduct.shelf_life_setting_id, QRProduct.serial_prefix_setting_id),
+            ),
             (QRBlock, (QRBlock.channel_setting_id, QRBlock.destination_setting_id)),
         ):
             for column in columns:
@@ -120,9 +133,7 @@ class QRProductSettingRepository:
         self.db.refresh(setting)
         return setting
 
-    def is_referenced_by_product(
-        self, setting_id: UUID, organization_id: UUID
-    ) -> bool:
+    def is_referenced_by_product(self, setting_id: UUID, organization_id: UUID) -> bool:
         product_reference = (
             self.db.query(QRProduct.id)
             .filter(

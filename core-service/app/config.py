@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     secure_qr_failed_attempt_limit: int = 5
     secure_qr_failed_attempt_window_seconds: int = 600
     secure_qr_lockout_seconds: int = 900
+    # Optional browser-location updates may each trigger one outbound reverse
+    # geocode, so they carry their own per-source budget.
+    public_scan_location_rate_limit_per_minute: int = 20
 
     # Logging
     log_level: str = "INFO"
@@ -123,9 +126,16 @@ class Settings(BaseSettings):
     qr_shortener_cdn_prefix: str = "bwqr.me"
     qr_shortener_timeout_seconds: float = 10.0
     qr_shortener_max_retries: int = 3
-    # Reverse-geocode permitted browser GPS coordinates using Nominatim.
-    reverse_geocoding_url: str = "https://nominatim.openstreetmap.org/reverse"
+    # Reverse geocoding is OPT-IN. Leave empty unless this deployment is
+    # explicitly allowed to send browser GPS coordinates to that provider
+    # (self-hosted Nominatim recommended; a public instance must be covered by
+    # your privacy notice and usage policy). Browser GPS must not be disclosed
+    # to a third party merely by deploying the application.
+    reverse_geocoding_url: str = ""
     reverse_geocoding_timeout_seconds: float = 4.0
+    # Contact URL/e-mail appended to the provider User-Agent. Nominatim's usage
+    # policy requires an identifying agent with a way to reach the operator.
+    reverse_geocoding_contact: str = ""
     aws_s3_bucket: str = ""
     aws_s3_region: str = "ap-south-1"
     aws_s3_endpoint_url: str = ""

@@ -33,9 +33,11 @@ def downgrade() -> None:
     if not has_table("qr_products") or has_index("qr_products", INDEX_NAME):
         return
 
-    duplicates = op.get_bind().execute(
-        sa.text(
-            """
+    duplicates = (
+        op.get_bind()
+        .execute(
+            sa.text(
+                """
             SELECT organization_id, lower(btrim(name)) AS name_ci, count(*) AS n
             FROM qr_products
             WHERE deleted_at IS NULL AND name IS NOT NULL AND btrim(name) <> ''
@@ -43,8 +45,10 @@ def downgrade() -> None:
             HAVING count(*) > 1
             ORDER BY 3 DESC, 2
             """
+            )
         )
-    ).fetchall()
+        .fetchall()
+    )
     if duplicates:
         preview = "; ".join(
             f"{row[0]} / '{row[1]}' x{row[2]}" for row in duplicates[:10]
