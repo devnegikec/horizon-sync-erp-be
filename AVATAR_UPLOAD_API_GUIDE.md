@@ -30,12 +30,12 @@ Response `200` — the full profile, including the new URL:
 
 Replacing an image deletes the previous file, so old avatars do not accumulate.
 
-| Status | When |
-|---|---|
-| `415` | content type is not `image/png`, `image/jpeg`, `image/webp` |
-| `422` | empty file |
-| `413` | larger than `AVATAR_MAX_BYTES` (default 2 MB) |
-| `503` | storage backend unavailable |
+| Status | When                                                        |
+| ------ | ----------------------------------------------------------- |
+| `415`  | content type is not `image/png`, `image/jpeg`, `image/webp` |
+| `422`  | empty file                                                  |
+| `413`  | larger than `AVATAR_MAX_BYTES` (default 2 MB)               |
+| `503`  | storage backend unavailable                                 |
 
 ### 2. Remove — `DELETE /users/me/avatar`
 
@@ -101,15 +101,15 @@ clear the image.
 To make dev/staging durable, copy the core-service bucket variables onto the
 identity-service. **Configured on both `dev` and `staging`** (2026-11-01):
 
-| Variable | dev | staging |
-|---|---|---|
-| `AWS_S3_BUCKET` | `brandwise-dev-files-iywczu` | `brandwise-stage-files-zufa6s` |
-| `AWS_S3_REGION` | `auto` | `sin` |
-| `AWS_S3_ENDPOINT_URL` | `https://t3.storageapi.dev` | same |
-| `AWS_S3_ADDRESSING_STYLE` | `virtual` | same |
-| `AWS_S3_SERVER_SIDE_ENCRYPTION` | `none` | same |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | copied from core-service | copied from core-service |
-| `MEDIA_BASE_URL` | `https://dev-identity-api.ciphercode.ai` | `https://identity-api.ciphercode.ai` |
+| Variable                                      | dev                                      | staging                              |
+| --------------------------------------------- | ---------------------------------------- | ------------------------------------ |
+| `AWS_S3_BUCKET`                               | `brandwise-dev-files-iywczu`             | `brandwise-stage-files-zufa6s`       |
+| `AWS_S3_REGION`                               | `auto`                                   | `sin`                                |
+| `AWS_S3_ENDPOINT_URL`                         | `https://t3.storageapi.dev`              | same                                 |
+| `AWS_S3_ADDRESSING_STYLE`                     | `virtual`                                | same                                 |
+| `AWS_S3_SERVER_SIDE_ENCRYPTION`               | `none`                                   | same                                 |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | copied from core-service                 | copied from core-service             |
+| `MEDIA_BASE_URL`                              | `https://dev-identity-api.ciphercode.ai` | `https://identity-api.ciphercode.ai` |
 
 > Railway bucket names carry a random suffix (`brandwise-stage-files-zufa6s`).
 > core-service `staging` still has the suffix-less `brandwise-stage-files`, which

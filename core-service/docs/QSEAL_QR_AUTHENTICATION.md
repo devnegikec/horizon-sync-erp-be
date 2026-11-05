@@ -40,11 +40,11 @@ ECDSA P-256 key pair.
 
 The `brands` table stores:
 
-| Column | Contents | Sensitivity |
-| --- | --- | --- |
-| `public_key` | Uncompressed X9.62 ECDSA public key encoded as hexadecimal | Public |
-| `private_key_encrypted` | Fernet-encrypted private-key scalar | Confidential |
-| `organization_id` | Tenant that owns the Brand | Security boundary |
+| Column                  | Contents                                                   | Sensitivity       |
+| ----------------------- | ---------------------------------------------------------- | ----------------- |
+| `public_key`            | Uncompressed X9.62 ECDSA public key encoded as hexadecimal | Public            |
+| `private_key_encrypted` | Fernet-encrypted private-key scalar                        | Confidential      |
+| `organization_id`       | Tenant that owns the Brand                                 | Security boundary |
 
 `KeyService` encrypts the private-key scalar using
 `BRAND_KEY_ENCRYPTION_SECRET` before the Brand record is written. The plaintext
@@ -94,9 +94,9 @@ For each Product Item, block generation performs the following steps:
 9. Percent-encode the signature when inserting it into the URL.
 10. Build the long verification URL:
 
-   ```text
-   https://app.ciphercode.ai/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}
-   ```
+```text
+https://app.ciphercode.ai/g/{gtin}/s/{serial_number}/{timestamp}?c={signature}
+```
 
 11. Optionally send the long URL to the configured short-URL provider.
 12. Save the Product Item and write the URL to the generated QR workbook.
