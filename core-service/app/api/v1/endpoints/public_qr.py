@@ -4,7 +4,14 @@ import ipaddress
 import logging
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    status,
+)
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,6 +26,7 @@ from app.services.public_scan_capture_service import (
     enrich_scan_location,
 )
 from app.services.qr_verification_service import QRVerificationService
+from app.services.secure_qr_rate_limit_service import allow_scan_location_update
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,9 +89,9 @@ async def verify_public_qr(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    result = QRVerificationService(db).verify(data)
-    event_id = _scan_event_id(request)
     client_ip = _client_ip(request)
+    result = QRVerificationService(db).verify(data, client_ip=client_ip)
+    event_id = _scan_event_id(request)
     try:
         captured_id = PublicScanCaptureService(db).capture(
             event_id=event_id,
@@ -96,11 +104,12 @@ async def verify_public_qr(
         )
         if captured_id:
             result["scan_event_id"] = captured_id
-            background_tasks.add_task(
-                enrich_scan_location,
-                captured_id,
-                client_ip,
-            )
+            if captured_id == event_id:
+                background_tasks.add_task(
+                    enrich_scan_location,
+                    captured_id,
+                    client_ip,
+                )
     except Exception:
         db.rollback()
         # Analytics must never interrupt a consumer's authenticity result.
@@ -116,8 +125,18 @@ async def verify_public_qr(
 async def update_public_scan_location(
     event_id: UUID,
     data: PublicScanLocationUpdate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> None:
+    # This endpoint is unauthenticated and one accepted call can trigger an
+    # outbound reverse-geocode request, so the source needs its own budget
+    # before any provider interaction happens.
+    if not allow_scan_location_update(_client_ip(request)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many location updates. Try again shortly.",
+        )
+
     location_names = await reverse_geocode(data.latitude, data.longitude)
     updated = PublicScanCaptureService(db).update_browser_location(
         event_id,

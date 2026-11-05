@@ -17,6 +17,7 @@ from app.schemas.qr_verification import (
     QRVerificationStatus,
 )
 from app.services.key_service import KeyService
+from app.services.secure_qr_rate_limit_service import SecureQRRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +27,11 @@ class QRVerificationService:
         self.db = db
         self.repo = QRVerificationRepository(db)
         self.key_service = KeyService(settings.brand_key_encryption_secret)
+        self.secure_qr_rate_limiter = SecureQRRateLimiter()
 
-    def verify(self, data: PublicQRVerifyRequest) -> dict:  # noqa: C901
+    def verify(  # noqa: C901
+        self, data: PublicQRVerifyRequest, *, client_ip: str | None = None
+    ) -> dict:
         identity = self.repo.resolve_active_item_identity(data.serial_number)
         if identity is None:
             return self._invalid_response()
@@ -103,6 +107,7 @@ class QRVerificationService:
                 data,
                 qr_type,
                 item_details,
+                client_ip=client_ip,
             )
             if challenge is not None:
                 self.db.rollback()
@@ -273,6 +278,8 @@ class QRVerificationService:
         data: PublicQRVerifyRequest,
         qr_type: QRType,
         item_details: dict[str, object],
+        *,
+        client_ip: str | None,
     ) -> dict | None:
         if qr_type == QRType.DUAL and data.qr_channel == QRVerificationChannel.OVERT:
             return self._verified_response(
@@ -309,10 +316,58 @@ class QRVerificationService:
                 item_details=item_details,
             )
 
+        rate_limit_decision = self.secure_qr_rate_limiter.before_attempt(
+            item.serial_number, client_ip
+        )
+        if rate_limit_decision:
+            message = (
+                "Too many incorrect secure-code attempts. "
+                f"Try again in {self._retry_after_label(rate_limit_decision.retry_after_seconds)}."
+                if rate_limit_decision.reason == "lockout"
+                else "Too many secure-code attempts from this connection. "
+                f"Try again in {self._retry_after_label(rate_limit_decision.retry_after_seconds)}."
+            )
+            return self._verified_response(
+                item,
+                product,
+                brand,
+                data.gtin,
+                qr_type,
+                QRVerificationStatus.INVALID,
+                authentic=False,
+                message=message,
+                requires_action=True,
+                challenge_type="secure_code",
+                item_details=item_details,
+                retry_after_seconds=rate_limit_decision.retry_after_seconds,
+            )
+
         expected_code = (item.secrete_code or "").strip().upper()
         submitted_code = data.secure_code.strip().upper()
         if expected_code and secrets.compare_digest(expected_code, submitted_code):
+            self.secure_qr_rate_limiter.clear_failures(item.serial_number, client_ip)
             return None
+        lockout_decision = self.secure_qr_rate_limiter.record_failure(
+            item.serial_number, client_ip
+        )
+        if lockout_decision:
+            return self._verified_response(
+                item,
+                product,
+                brand,
+                data.gtin,
+                qr_type,
+                QRVerificationStatus.INVALID,
+                authentic=False,
+                message=(
+                    "Too many incorrect secure-code attempts. "
+                    f"Try again in {self._retry_after_label(lockout_decision.retry_after_seconds)}."
+                ),
+                requires_action=True,
+                challenge_type="secure_code",
+                item_details=item_details,
+                retry_after_seconds=lockout_decision.retry_after_seconds,
+            )
         return self._verified_response(
             item,
             product,
@@ -321,11 +376,16 @@ class QRVerificationService:
             qr_type,
             QRVerificationStatus.INVALID,
             authentic=False,
-            message="The protected code is invalid. Check the code and try again.",
+            message="The secure code is incorrect. Check the characters and try again.",
             requires_action=True,
             challenge_type="secure_code",
             item_details=item_details,
         )
+
+    @staticmethod
+    def _retry_after_label(seconds: int) -> str:
+        minutes = max(1, (seconds + 59) // 60)
+        return "less than a minute" if minutes == 1 else f"{minutes} minutes"
 
     @staticmethod
     def _invalid_response(message: str = "QR verification failed.") -> dict:
@@ -403,6 +463,7 @@ class QRVerificationService:
         challenge_type: str | None = None,
         qr_channel: QRVerificationChannel | None = None,
         item_details: dict[str, object] | None = None,
+        retry_after_seconds: int | None = None,
     ) -> dict:
         sku = item.sku
         variant_attributes = sku.attribute_display if sku else {}
@@ -419,6 +480,7 @@ class QRVerificationService:
             "message": message,
             "requires_action": requires_action,
             "challenge_type": challenge_type,
+            "retry_after_seconds": retry_after_seconds,
             "product_name": product.name,
             "generic_name": getattr(product, "generic_name", None),
             "brand_name": brand.name,

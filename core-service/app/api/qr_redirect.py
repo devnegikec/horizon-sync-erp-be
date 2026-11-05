@@ -1,6 +1,7 @@
 """Public browser entry point for product QR URLs."""
 
 import logging
+from html import escape
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import (
@@ -12,7 +13,7 @@ from fastapi import (
     Request,
     status,
 )
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.api.v1.endpoints.public_qr import _client_ip, _scan_event_id
@@ -57,6 +58,81 @@ def _append_query(url: str, values: dict[str, object | None]) -> str:
     )
 
 
+def _browser_location_page(redirect_url: str, event_id: str) -> HTMLResponse:
+    """Ask browser visitors for optional GPS before continuing to the product."""
+    location_url = f"/api/v1/public/qr/scans/{event_id}/location"
+    page = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Opening product page</title>
+  <style>
+    body {{ margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: #f8fafc; color: #172033; font: 16px system-ui, sans-serif; }}
+    main {{ width: min(90vw, 28rem); padding: 2rem; box-sizing: border-box;
+      border: 1px solid #e2e8f0; border-radius: 1rem; background: white;
+      box-shadow: 0 8px 30px #0f172a12; text-align: center; }}
+    button {{ margin-top: 1rem; padding: .7rem 1rem; border: 0; border-radius: .5rem;
+      background: #6d28d9; color: white; font: inherit; cursor: pointer; }}
+    p {{ color: #64748b; line-height: 1.5; }}
+  </style>
+</head>
+<body>
+  <main id="qr-location" data-redirect="{escape(redirect_url, quote=True)}"
+        data-location-url="{escape(location_url, quote=True)}">
+    <h1>Opening product page</h1>
+    <p>Share your location to include it with this scan. You can continue without sharing.</p>
+    <button id="continue" type="button">Continue without sharing</button>
+  </main>
+  <script>
+    (() => {{
+      const panel = document.getElementById("qr-location");
+      const destination = panel.dataset.redirect;
+      let continued = false;
+      const continueToProduct = () => {{
+        if (continued) return;
+        continued = true;
+        window.location.replace(destination);
+      }};
+      document.getElementById("continue").addEventListener("click", continueToProduct);
+      if (!navigator.geolocation) {{
+        continueToProduct();
+        return;
+      }}
+      navigator.geolocation.getCurrentPosition(async (position) => {{
+        const coordinates = position.coords;
+        try {{
+          await fetch(panel.dataset.locationUrl, {{
+            method: "PATCH",
+            headers: {{ "Content-Type": "application/json" }},
+            body: JSON.stringify({{
+              latitude: coordinates.latitude,
+              longitude: coordinates.longitude,
+              accuracy_meters: Number.isFinite(coordinates.accuracy)
+                ? Math.max(0, Math.min(Math.round(coordinates.accuracy), 100000))
+                : null
+            }}),
+            keepalive: true
+          }});
+        }} catch (_) {{}}
+        continueToProduct();
+      }}, continueToProduct, {{ enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }});
+    }})();
+  </script>
+</body>
+</html>"""
+    return HTMLResponse(
+        page,
+        headers={
+            "Cache-Control": "no-store",
+            "Permissions-Policy": "geolocation=(self)",
+            "Referrer-Policy": "no-referrer",
+        },
+    )
+
+
 async def _location_values(request: Request) -> tuple[str | None, str | None]:
     location = await lookup_ip(_client_ip(request))
     if not location:
@@ -82,8 +158,9 @@ async def redirect_qr_to_client(
     """Implement the legacy Django direct-redirect behavior.
 
     This route deliberately does not authenticate the QR. When the product
-    opts into client redirect mode, the browser is sent to the configured
-    client URL immediately for every QR type.
+    opts into client redirect mode, browser visits capture optional GPS before
+    continuing to the configured client URL; non-browser clients are redirected
+    immediately.
     """
     repo = QRVerificationRepository(db)
     identity = repo.resolve_active_item_identity(serial_number)
@@ -164,10 +241,11 @@ async def redirect_qr_to_client(
                 **common,
             }
 
-    # Direct browser redirects do not pass through POST /public/qr/verify, so
-    # capture the scan here before returning the HTTP redirect. This mirrors
-    # the normal public verification flow and keeps redirect-mode scans in
-    # QSeal analytics.
+    # Direct QR visits do not pass through POST /public/qr/verify, so capture
+    # the scan here before handing the browser to the configured product page.
+    # This keeps redirect-mode scans in QSeal analytics.
+    event_id = _scan_event_id(request)
+    captured_id = None
     try:
         scan_data = PublicQRVerifyRequest(
             gtin=gtin,
@@ -184,7 +262,7 @@ async def redirect_qr_to_client(
             or QRType.DYNAMIC
         )
         captured_id = PublicScanCaptureService(db).capture(
-            event_id=_scan_event_id(request),
+            event_id=event_id,
             request_data=scan_data,
             verification_result={
                 # This route never authenticates the QR, so the scan is
@@ -199,7 +277,7 @@ async def redirect_qr_to_client(
             referrer=request.headers.get("referer"),
             language=request.headers.get("accept-language"),
         )
-        if captured_id and background_tasks is not None:
+        if captured_id and captured_id == event_id and background_tasks is not None:
             background_tasks.add_task(
                 enrich_scan_location,
                 captured_id,
@@ -214,7 +292,8 @@ async def redirect_qr_to_client(
         )
 
     db.rollback()
-    return RedirectResponse(
-        url=_append_query(redirect_url, params),
-        status_code=status.HTTP_302_FOUND,
-    )
+    destination = _append_query(redirect_url, params)
+    accept = request.headers.get("accept", "")
+    if captured_id and isinstance(accept, str) and "text/html" in accept.lower():
+        return _browser_location_page(destination, str(captured_id))
+    return RedirectResponse(url=destination, status_code=status.HTTP_302_FOUND)

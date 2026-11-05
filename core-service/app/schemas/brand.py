@@ -8,13 +8,13 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BrandCreate(BaseModel):
-    name: str = Field(..., max_length=256)
-    short_code: str = Field(..., max_length=256)
+    name: str = Field(..., max_length=20)
+    short_code: str = Field(..., max_length=8)
 
 
 class BrandUpdate(BaseModel):
-    name: str | None = Field(None, max_length=256)
-    short_code: str | None = Field(None, max_length=256)
+    name: str | None = Field(None, max_length=20)
+    short_code: str | None = Field(None, max_length=8)
 
 
 class BrandResponse(BaseModel):

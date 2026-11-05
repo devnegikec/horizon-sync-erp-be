@@ -531,6 +531,42 @@ class ProductItemRepository:
             .first()
         )
 
+    def get_by_id_in_block(
+        self,
+        item_id: UUID,
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> ProductItem | None:
+        return (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.id == item_id,
+                ProductItem.block_id == block_id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .first()
+        )
+
+    def list_by_ids_in_block(
+        self,
+        item_ids: list[UUID],
+        block_id: UUID,
+        organization_id: UUID,
+    ) -> list[ProductItem]:
+        if not item_ids:
+            return []
+        return (
+            self.db.query(ProductItem)
+            .filter(
+                ProductItem.id.in_(item_ids),
+                ProductItem.block_id == block_id,
+                ProductItem.organization_id == organization_id,
+                ProductItem.deleted_at.is_(None),
+            )
+            .all()
+        )
+
     def get_existing_serials(
         self, serial_numbers: list[str], organization_id: UUID
     ) -> set[str]:
@@ -570,12 +606,18 @@ class ProductItemRepository:
         organization_id: UUID,
         page: int = 1,
         page_size: int = 50,
+        search: str | None = None,
+        qr_active: bool | None = None,
     ) -> tuple[list[ProductItem], int]:
         q = self.db.query(ProductItem).filter(
             ProductItem.block_id == block_id,
             ProductItem.organization_id == organization_id,
             ProductItem.deleted_at.is_(None),
         )
+        if search:
+            q = q.filter(ProductItem.serial_number.ilike(f"%{search.strip()}%"))
+        if qr_active is not None:
+            q = q.filter(ProductItem.qr_active.is_(qr_active))
         total = q.count()
         items = (
             q.order_by(ProductItem.created_at.asc())

@@ -105,6 +105,9 @@ def _service(item) -> QRVerificationService:
     service.repo.get_tenant_item_for_update.return_value = item
     service.repo.get_activation_details.return_value = None
     service.key_service.verify_signature.return_value = True
+    service.secure_qr_rate_limiter = Mock()
+    service.secure_qr_rate_limiter.before_attempt.return_value = None
+    service.secure_qr_rate_limiter.record_failure.return_value = None
     return service
 
 
@@ -341,7 +344,28 @@ def test_secure_code_rejects_wrong_code():
     result = service.verify(_request(secure_code="WRONG-CODE"))
 
     assert result["verification_status"] == "invalid"
-    assert "protected code" in result["message"]
+    assert "secure code" in result["message"]
+
+
+def test_secure_code_lockout_returns_retry_window_without_revealing_code_state():
+    item = _item(qr_type="secure_code")
+    service = _service(item)
+    service.secure_qr_rate_limiter.record_failure.return_value = SimpleNamespace(
+        reason="lockout", retry_after_seconds=900
+    )
+
+    result = service.verify(
+        _request(secure_code="WRONG-CODE"), client_ip="203.0.113.10"
+    )
+
+    assert result["verification_status"] == "invalid"
+    assert result["requires_action"] is True
+    assert result["challenge_type"] == "secure_code"
+    assert result["retry_after_seconds"] == 900
+    assert "Try again in 15 minutes" in result["message"]
+    service.secure_qr_rate_limiter.record_failure.assert_called_once_with(
+        item.serial_number, "203.0.113.10"
+    )
 
 
 def test_one_time_verification_persists_only_consumption_state():

@@ -27,8 +27,11 @@ from app.schemas.qr_product import (
     BlockDownloadResponse,
     OrgBlockListItem,
     OrgBlockListResponse,
+    ProductItemBulkStatusResponse,
+    ProductItemBulkStatusUpdate,
     ProductItemListResponse,
     ProductItemResponse,
+    ProductItemStatusUpdate,
     QRActivationParamsCreate,
     QRActivationParamsResponse,
     QRBlockCreate,
@@ -44,6 +47,7 @@ from app.schemas.qr_product import (
     QRValidateRequest,
     QRValidateResponse,
     ScanAnalyticsResponse,
+    SerialCollisionCheckResponse,
 )
 from app.services.qr_block_queue import enqueue_qr_block
 from app.services.qr_product_bulk_service import QRProductBulkService
@@ -359,6 +363,32 @@ async def list_org_qr_blocks(
 
 
 @router.get(
+    "/blocks/serial-collision-check",
+    response_model=SerialCollisionCheckResponse,
+    summary="Check a sequential serial range",
+    description=(
+        "Preflight check for an intended sequential QR block range. "
+        "The generation endpoint repeats this check before reserving credits."
+    ),
+)
+async def check_serial_collision_range(
+    product_id: UUID = Query(...),
+    starting_serial: str = Query(..., min_length=1, max_length=10),
+    quantity: int = Query(..., ge=1, le=5000),
+    current_user: CurrentUser = Depends(require_permission("qr_product.create")),
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    result = svc.check_sequential_serial_collisions(
+        product_id,
+        starting_serial,
+        quantity,
+        current_user.organization_id,
+    )
+    return SerialCollisionCheckResponse(**result)
+
+
+@router.get(
     "/blocks/{block_id}",
     response_model=QRBlockResponse,
     summary="Get QR block detail",
@@ -478,17 +508,67 @@ async def list_product_items(
     block_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
+    search: str | None = Query(None, max_length=100),
+    qr_active: bool | None = Query(None),
     current_user: CurrentUser = Depends(require_permission("qr_product.read")),
     db: Session = Depends(get_db),
 ):
     svc = QRProductService(db)
     items, pagination = svc.list_items(
-        block_id, current_user.organization_id, page, page_size
+        block_id, current_user.organization_id, page, page_size, search, qr_active
     )
     return ProductItemListResponse(
         items=[ProductItemResponse.model_validate(i) for i in items],
         pagination=pagination,
     )
+
+
+@router.patch(
+    "/blocks/{block_id}/items/status",
+    response_model=ProductItemBulkStatusResponse,
+    summary="Update multiple QR serial statuses",
+)
+async def update_product_items_status(
+    block_id: UUID,
+    data: ProductItemBulkStatusUpdate,
+    current_user: CurrentUser = Depends(require_permission("qr_product.update")),
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    items = svc.update_block_items_status(
+        block_id,
+        data.item_ids,
+        data.active,
+        current_user.organization_id,
+        current_user.id,
+    )
+    return ProductItemBulkStatusResponse(
+        updated_count=len(items),
+        items=[ProductItemResponse.model_validate(item) for item in items],
+    )
+
+
+@router.patch(
+    "/blocks/{block_id}/items/{item_id}/status",
+    response_model=ProductItemResponse,
+    summary="Update one QR serial status",
+)
+async def update_product_item_status(
+    block_id: UUID,
+    item_id: UUID,
+    data: ProductItemStatusUpdate,
+    current_user: CurrentUser = Depends(require_permission("qr_product.update")),
+    db: Session = Depends(get_db),
+):
+    svc = QRProductService(db)
+    item = svc.update_block_item_status(
+        block_id,
+        item_id,
+        data.active,
+        current_user.organization_id,
+        current_user.id,
+    )
+    return ProductItemResponse.model_validate(item)
 
 
 # ── QR Validate (public — no auth required) ───────────────────────────────────

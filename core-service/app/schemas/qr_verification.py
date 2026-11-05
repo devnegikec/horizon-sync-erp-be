@@ -62,6 +62,7 @@ class PublicQRVerifyResponse(BaseModel):
     message: str
     requires_action: bool = False
     challenge_type: str | None = None
+    retry_after_seconds: int | None = Field(None, ge=1)
     product_name: str | None = None
     generic_name: str | None = None
     brand_name: str | None = None

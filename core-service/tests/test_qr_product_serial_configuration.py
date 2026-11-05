@@ -17,7 +17,6 @@ def make_service() -> QRProductService:
     service.db.query.return_value.join.return_value.filter.return_value.all.return_value = []
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
-    service._assert_product_name_available = Mock()
     service.block_repo = Mock()
     service.item_repo = Mock()
     service.sku_repo = Mock()

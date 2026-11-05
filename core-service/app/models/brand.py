@@ -18,8 +18,8 @@ class Brand(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id = Column(UUID(as_uuid=True), nullable=False, index=True)
 
-    name = Column(String(256), nullable=True)
-    short_code = Column(String(256), nullable=True)
+    name = Column(String(20), nullable=True)
+    short_code = Column(String(8), nullable=True)
     public_key = Column(String(512), nullable=True)
     private_key_encrypted = Column(Text, nullable=True)
 

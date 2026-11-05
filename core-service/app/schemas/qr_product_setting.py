@@ -38,6 +38,7 @@ class QRProductSettingResponse(BaseModel):
     sort_order: int
     is_active: bool
     extra_data: dict[str, Any] | None
+    usage_count: int = 0
     created_at: datetime
     updated_at: datetime
 

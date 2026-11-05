@@ -3,7 +3,7 @@
 import hashlib
 import hmac
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
@@ -23,6 +23,11 @@ from app.services.qseal_suspicion_service import QSealSuspicionService
 from app.services.user_agent_service import parse_user_agent
 
 logger = logging.getLogger(__name__)
+
+#: Repeated scans of the same serial inside this window reuse one scan event.
+_DUPLICATE_SCAN_WINDOW = timedelta(minutes=5)
+#: Browser location may only be attached to scans captured this recently.
+_LOCATION_UPDATE_WINDOW = timedelta(minutes=15)
 
 
 def _privacy_safe_referrer(value: str | None) -> str | None:
@@ -49,7 +54,7 @@ def _hash_ip(ip_address: str | None) -> str | None:
 
 
 class PublicScanCaptureService:
-    """Create or update one scan event for a browser-generated event UUID."""
+    """Create or update one scan event per serial within a five-minute window."""
 
     def __init__(self, db: Session):
         self.db = db
@@ -171,9 +176,8 @@ class PublicScanCaptureService:
                     batch = parameter.dispatch_batch
 
                 qseal_parameter_id = getattr(parameter, "id", None)
-                qseal_track_id = (
-                    getattr(parameter, "parent_id", None)
-                    or getattr(parameter, "parent_app_id", None)
+                qseal_track_id = getattr(parameter, "parent_id", None) or getattr(
+                    parameter, "parent_app_id", None
                 )
                 qseal_type = None
                 if qseal_track_id:
@@ -214,47 +218,53 @@ class PublicScanCaptureService:
             )
             return {}
 
-    def capture(
+    def _recent_serial_event_id(
+        self, organization_id: UUID, serial_number: str | None
+    ) -> UUID | None:
+        """Return the event id of a scan for this serial in the last 5 minutes.
+
+        Repeated scans of the same label are folded onto the first event so a
+        page refresh does not inflate analytics or rapid-repeat scoring.
+        """
+        if not serial_number:
+            return None
+        recent_event = (
+            self.db.query(QRScanEvent)
+            .filter(
+                QRScanEvent.organization_id == organization_id,
+                QRScanEvent.serial_number == serial_number,
+                QRScanEvent.event_id.isnot(None),
+                QRScanEvent.scan_timestamp
+                >= datetime.now(UTC) - _DUPLICATE_SCAN_WINDOW,
+            )
+            .order_by(QRScanEvent.scan_timestamp.desc())
+            .first()
+        )
+        return recent_event.event_id if recent_event is not None else None
+
+    @staticmethod
+    def _enum_value(value):
+        """Return the plain value of an enum, or the value unchanged."""
+        return value.value if hasattr(value, "value") else value
+
+    def _build_event_values(
         self,
         *,
-        event_id: UUID,
+        item_id: UUID,
+        organization_id: UUID,
         request_data: PublicQRVerifyRequest,
         verification_result: dict,
+        parsed_agent: dict | None,
+        scan_timestamp: datetime,
         client_ip: str | None,
         user_agent: str | None,
         referrer: str | None,
         language: str | None,
-    ) -> UUID | None:
-        identity = QRVerificationRepository(
-            self.db
-        ).resolve_active_item_identity(request_data.serial_number)
-        if identity is None:
-            # Without a resolved item there is no trustworthy tenant owner.
-            return None
-
-        item_id, organization_id = identity
-        parsed_agent = parse_user_agent(user_agent)
-        event = (
-            self.db.query(QRScanEvent)
-            .filter(QRScanEvent.event_id == event_id)
-            .first()
+    ) -> dict:
+        """Build the column values for one scan event."""
+        status = self._enum_value(
+            verification_result.get("verification_status") or "invalid"
         )
-        if event is not None and event.organization_id != organization_id:
-            logger.warning("Rejected cross-tenant scan event reuse: %s", event_id)
-            return None
-
-        # Keep retries idempotent: an existing event retains its original
-        # timestamp, so scoring does not treat the same browser retry as a
-        # new rapid-repeat scan.
-        scan_timestamp = (
-            (event.scan_timestamp if event is not None else None) or datetime.now(UTC)
-        )
-        status = verification_result.get("verification_status") or "invalid"
-        if hasattr(status, "value"):
-            status = status.value
-        qr_type = verification_result.get("qr_type")
-        if hasattr(qr_type, "value"):
-            qr_type = qr_type.value
         values = {
             "organization_id": organization_id,
             "product_item_id": item_id,
@@ -262,15 +272,11 @@ class PublicScanCaptureService:
             "scan_timestamp": scan_timestamp,
             "verification_status": str(status),
             "authentic": bool(verification_result.get("authentic", False)),
-            "qr_type": qr_type,
-            "qr_channel": (
-                request_data.qr_channel.value if request_data.qr_channel else None
-            ),
+            "qr_type": self._enum_value(verification_result.get("qr_type")),
+            "qr_channel": self._enum_value(request_data.qr_channel),
             "user_agent_raw": user_agent[:2000] if user_agent else None,
             "user_agent_parsed": parsed_agent,
-            "device_type": (
-                parsed_agent.get("device_type") if parsed_agent else None
-            ),
+            "device_type": (parsed_agent.get("device_type") if parsed_agent else None),
             "os": parsed_agent.get("os") if parsed_agent else None,
             "browser": parsed_agent.get("browser") if parsed_agent else None,
             "is_bot": bool(parsed_agent and parsed_agent.get("is_bot")),
@@ -288,6 +294,65 @@ class PublicScanCaptureService:
                 serial_number=request_data.serial_number,
                 organization_id=organization_id,
             )
+        )
+        return values
+
+    def capture(
+        self,
+        *,
+        event_id: UUID,
+        request_data: PublicQRVerifyRequest,
+        verification_result: dict,
+        client_ip: str | None,
+        user_agent: str | None,
+        referrer: str | None,
+        language: str | None,
+    ) -> UUID | None:
+        identity = QRVerificationRepository(self.db).resolve_active_item_identity(
+            request_data.serial_number
+        )
+        if identity is None:
+            # Without a resolved item there is no trustworthy tenant owner.
+            return None
+
+        item_id, organization_id = identity
+        parsed_agent = parse_user_agent(user_agent)
+        event = (
+            self.db.query(QRScanEvent)
+            .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
+            .first()
+        )
+        if event is None:
+            recent_event_id = self._recent_serial_event_id(
+                organization_id, request_data.serial_number
+            )
+            if recent_event_id is not None:
+                # The recent scan already contains its original location and
+                # metadata. Return its captured ID without changing the row.
+                return recent_event_id
+
+        if event is not None and event.organization_id != organization_id:
+            logger.warning("Rejected cross-tenant scan event reuse: %s", event_id)
+            return None
+
+        # Keep retries idempotent: an existing event retains its original
+        # timestamp so refreshing the same QR does not create a rapid-repeat
+        # scan event.
+        scan_timestamp = (
+            event.scan_timestamp if event is not None else None
+        ) or datetime.now(UTC)
+        values = self._build_event_values(
+            item_id=item_id,
+            organization_id=organization_id,
+            request_data=request_data,
+            verification_result=verification_result,
+            parsed_agent=parsed_agent,
+            scan_timestamp=scan_timestamp,
+            client_ip=client_ip,
+            user_agent=user_agent,
+            referrer=referrer,
+            language=language,
         )
 
         # Suspicion enrichment is deliberately best-effort. A public visitor
@@ -331,19 +396,31 @@ class PublicScanCaptureService:
         event = (
             self.db.query(QRScanEvent)
             .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
             .first()
         )
         if event is None:
+            return False
+        # Location is attached moments after the scan. An old event id must not
+        # be rewritable forever by anyone who learns it.
+        scanned_at = event.scan_timestamp
+        if scanned_at is not None and scanned_at.tzinfo is None:
+            scanned_at = scanned_at.replace(tzinfo=UTC)
+        if (
+            scanned_at is None
+            or datetime.now(UTC) - scanned_at > _LOCATION_UPDATE_WINDOW
+        ):
+            logger.info("Rejected location update for stale scan event %s", event_id)
             return False
         event.latitude = latitude
         event.longitude = longitude
         event.location_source = "browser"
         event.location_accuracy_meters = accuracy_meters
         if location_names:
-            event.city = location_names.get("city")
-            event.state = location_names.get("state")
-            event.country = location_names.get("country")
-            event.street_address = location_names.get("street_address")
+            for field in ("city", "state", "country", "street_address"):
+                value = location_names.get(field)
+                if value:
+                    setattr(event, field, value)
 
         # Browser location is submitted after the initial verification call.
         # Re-score the event now so rapid cross-location scans are included in
@@ -389,13 +466,22 @@ async def enrich_scan_location(event_id: UUID, client_ip: str | None) -> None:
         event = (
             db.query(QRScanEvent)
             .filter(QRScanEvent.event_id == event_id)
+            .with_for_update()
             .first()
         )
-        if event is None or event.location_source == "browser":
+        if event is None:
             return
-        for field in ("country", "state", "city", "latitude", "longitude"):
-            setattr(event, field, geo.get(field))
-        event.location_source = "ip"
+        if event.location_source == "browser":
+            # Keep the precise browser coordinates and accuracy, but use the
+            # existing IP lookup as a city/region label when reverse geocoding
+            # is unavailable or did not return names.
+            for field in ("country", "state", "city"):
+                if not getattr(event, field, None):
+                    setattr(event, field, geo.get(field))
+        else:
+            for field in ("country", "state", "city", "latitude", "longitude"):
+                setattr(event, field, geo.get(field))
+            event.location_source = "ip"
         db.commit()
     except Exception:
         db.rollback()

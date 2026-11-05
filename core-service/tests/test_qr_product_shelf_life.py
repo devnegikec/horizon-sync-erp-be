@@ -18,7 +18,6 @@ def make_product_service() -> QRProductService:
     service.db = Mock()
     service.product_repo = Mock()
     service.product_setting_repo = Mock()
-    service._assert_product_name_available = Mock()
     return service
 
 
