@@ -1,5 +1,10 @@
 """Limit QSeal brand name and short-code lengths.
 
+A column is only narrowed when every stored value already fits: truncating a
+brand name is destructive, and migrations run on every container start, so an
+oversized row leaves the column unchanged and is reported in the deploy log
+instead of aborting startup.
+
 Revision ID: 143_brand_field_lengths
 Revises: 142_qr_settings_and_brands_unique
 Create Date: 2026-10-28
@@ -18,8 +23,8 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _raise_if_oversized(column: str, maximum: int) -> None:
-    rows = (
+def _oversized_rows(column: str, maximum: int) -> list:
+    return (
         op.get_bind()
         .execute(
             sa.text(
@@ -35,33 +40,39 @@ def _raise_if_oversized(column: str, maximum: int) -> None:
         )
         .fetchall()
     )
+
+
+def _narrow(column: str, maximum: int) -> None:
+    """Shrink ``brands.<column>`` when every stored value already fits.
+
+    Migrations run on every container start, so this must not abort startup.
+    Truncating somebody's brand name is destructive, therefore an oversized row
+    leaves the column at its current length and is reported instead.
+    """
+    rows = _oversized_rows(column, maximum)
     if rows:
         preview = "; ".join(f"{row[0]} ({row[1]} characters)" for row in rows)
-        raise RuntimeError(
-            f"Cannot limit brands.{column} to {maximum} characters. "
-            f"Oversized rows: {preview}. Shorten these values, then re-run the migration."
+        print(
+            f"WARNING: 143_brand_field_lengths left brands.{column} unchanged — "
+            f"{len(rows)}+ value(s) exceed {maximum} characters: {preview}. "
+            "Shorten them and re-run this revision to apply the limit."
         )
+        return
+
+    op.alter_column(
+        "brands",
+        column,
+        existing_type=sa.String(length=256),
+        type_=sa.String(length=maximum),
+    )
 
 
 def upgrade() -> None:
     if not has_table("brands"):
         return
 
-    _raise_if_oversized("name", 20)
-    _raise_if_oversized("short_code", 8)
-
-    op.alter_column(
-        "brands",
-        "name",
-        existing_type=sa.String(length=256),
-        type_=sa.String(length=20),
-    )
-    op.alter_column(
-        "brands",
-        "short_code",
-        existing_type=sa.String(length=256),
-        type_=sa.String(length=8),
-    )
+    _narrow("name", 20)
+    _narrow("short_code", 8)
 
 
 def downgrade() -> None:
