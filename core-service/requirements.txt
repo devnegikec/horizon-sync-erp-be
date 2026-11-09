@@ -30,6 +30,10 @@ aiosmtplib==3.0.1
 # Redis (for event publishing)
 redis==5.0.1
 celery==5.4.0
+# kombu is unpinned upstream but 5.6+ refuses redis-py < 6.1 at runtime
+# ("Redis transport requires redis-py versions 6.1.0 or later"), which broke
+# fresh core-worker/core-service builds (celery enqueue + worker startup).
+kombu==5.5.4
 
 # Utilities
 python-dotenv==1.0.0
